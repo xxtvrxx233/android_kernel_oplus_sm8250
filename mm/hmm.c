@@ -224,7 +224,7 @@ static const struct mmu_notifier_ops hmm_mmu_notifier_ops = {
  * To start mirroring a process address space, the device driver must register
  * an HMM mirror struct.
  *
- * THE mm->mmap_sem MUST BE HELD IN WRITE MODE !
+ * THE mm->mmap_lock MUST BE HELD IN WRITE MODE !
  */
 int hmm_mirror_register(struct hmm_mirror *mirror, struct mm_struct *mm)
 {
@@ -801,7 +801,7 @@ EXPORT_SYMBOL(hmm_vma_range_done);
  *
  * Expected use pattern:
  * retry:
- *   down_read(&mm->mmap_sem);
+ *   down_read(&mm->mmap_lock);
  *   // Find vma and address device wants to fault, initialize hmm_pfn_t
  *   // array accordingly
  *   ret = hmm_vma_fault(range, write, block);
@@ -819,7 +819,7 @@ EXPORT_SYMBOL(hmm_vma_range_done);
  *   case -EPERM:
  *   default:
  *     // Handle error !
- *     up_read(&mm->mmap_sem)
+ *     up_read(&mm->mmap_lock)
  *     return;
  *   }
  *   // Take device driver lock that serialize device page table update
@@ -827,7 +827,7 @@ EXPORT_SYMBOL(hmm_vma_range_done);
  *   hmm_vma_range_done(range);
  *   // Commit pfns we got from hmm_vma_fault()
  *   driver_unlock_device_page_table_update();
- *   up_read(&mm->mmap_sem)
+ *   up_read(&mm->mmap_lock)
  *
  * YOU MUST CALL hmm_vma_range_done() AFTER THIS FUNCTION RETURN SUCCESS (0)
  * BEFORE FREEING THE range struct OR YOU WILL HAVE SERIOUS MEMORY CORRUPTION !

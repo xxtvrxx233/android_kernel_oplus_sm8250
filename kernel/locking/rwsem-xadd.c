@@ -312,7 +312,7 @@ __rwsem_down_read_failed_common(struct rw_semaphore *sem, int state)
 	while (true) {
 /* #ifdef OPLUS_FEATURE_SCHED_ASSIST
 //#ifdef CONFIG_UXCHAIN_V2
-		if (current->mm && sem == &(current->mm->mmap_sem)) {
+		if (current->mm && sem == &(current->mm->mmap_lock)) {
 			mem_sem_flag = 1;
 			sleep_begin = sched_clock();
 		}
@@ -679,7 +679,7 @@ __rwsem_down_write_failed_common(struct rw_semaphore *sem, int state)
 
 /* #ifdef OPLUS_FEATURE_SCHED_ASSIST
 //#ifdef CONFIG_UXCHAIN_V2
-	if (current->mm && sem == &(current->mm->mmap_sem)) {
+	if (current->mm && sem == &(current->mm->mmap_lock)) {
 		mem_sem_flag = 1;
 		sleep_begin = sched_clock();
 	}

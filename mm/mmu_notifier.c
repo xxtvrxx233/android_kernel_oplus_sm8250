@@ -248,8 +248,8 @@ void __mmu_notifier_invalidate_range(struct mm_struct *mm,
 EXPORT_SYMBOL_GPL(__mmu_notifier_invalidate_range);
 
 /*
- * Must be called while holding mm->mmap_sem for either read or write.
- * The result is guaranteed to be valid until mm->mmap_sem is dropped.
+ * Must be called while holding mm->mmap_lock for either read or write.
+ * The result is guaranteed to be valid until mm->mmap_lock is dropped.
  */
 bool mm_has_blockable_invalidate_notifiers(struct mm_struct *mm)
 {
@@ -293,7 +293,7 @@ static int do_mmu_notifier_register(struct mmu_notifier *mn,
 		goto out;
 
 	if (take_mmap_sem)
-		down_write(&mm->mmap_sem);
+		mmap_write_lock(mm);
 	ret = mm_take_all_locks(mm);
 	if (unlikely(ret))
 		goto out_clean;
@@ -322,7 +322,7 @@ static int do_mmu_notifier_register(struct mmu_notifier *mn,
 	mm_drop_all_locks(mm);
 out_clean:
 	if (take_mmap_sem)
-		up_write(&mm->mmap_sem);
+		mmap_write_unlock(mm);
 	kfree(mmu_notifier_mm);
 out:
 	BUG_ON(atomic_read(&mm->mm_users) <= 0);

@@ -247,7 +247,7 @@ cont:
 	rp.nr_reclaimed = 0;
 	rp.nr_scanned = 0;
 
-	down_read(&mm->mmap_sem);
+	down_read(&mm->mmap_lock);
 	if (type == RECLAIM_RANGE) {
 		vma = find_vma(mm, start);
 		while (vma) {
@@ -330,7 +330,7 @@ cont:
 	}
 
 	flush_tlb_mm(mm);
-	up_read(&mm->mmap_sem);
+	up_read(&mm->mmap_lock);
 
 	if (type != RECLAIM_SWAPIN) {
 		/*
@@ -378,7 +378,7 @@ static inline int _is_reclaim_should_cancel(struct mm_walk *walk)
 
 	if (mm != task->mm)
 		return PR_TASK_DIE;
-	if (rwsem_is_wlocked(&mm->mmap_sem))
+	if (rwsem_is_wlocked(&mm->mmap_lock))
 		return PR_SEM_OUT;
 #ifdef CONFIG_FG_TASK_UID
 	if (task_is_fg(task))

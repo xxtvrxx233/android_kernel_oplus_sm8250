@@ -2838,14 +2838,14 @@ void uxchain_rwsem_wake(struct task_struct *tsk, struct rw_semaphore *sem)
 	int set_ux_once;
 
 	if (current->mm) {
-		set_ux_once = (sem == &(current->mm->mmap_sem));
+		set_ux_once = (sem == &(current->mm->mmap_lock));
 		if (set_ux_once && sysctl_uxchain_v2)
 			tsk->ux_once = 1;
 	}
 }
 void uxchain_rwsem_down(struct rw_semaphore *sem)
 {
-	if (current->mm && sem == &(current->mm->mmap_sem) && sysctl_uxchain_v2) {
+	if (current->mm && sem == &(current->mm->mmap_lock) && sysctl_uxchain_v2) {
 		current->get_mmlock = 1;
 		current->get_mmlock_ts = sched_clock();
 	}
@@ -2853,7 +2853,7 @@ void uxchain_rwsem_down(struct rw_semaphore *sem)
 
 void uxchain_rwsem_up(struct rw_semaphore *sem)
 {
-	if (current->mm && sem == &(current->mm->mmap_sem) &&
+	if (current->mm && sem == &(current->mm->mmap_lock) &&
 		current->get_mmlock == 1 && sysctl_uxchain_v2) {
 		current->get_mmlock = 0;
 	}
