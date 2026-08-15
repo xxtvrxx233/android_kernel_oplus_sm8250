@@ -3807,6 +3807,18 @@ union bpf_attr {
  *		*ARG_PTR_TO_BTF_ID* of type *task_struct*.
  *	Return
  *		Pointer to the current task.
+ *
+ * u64 bpf_get_func_ip(void *ctx)
+ *	Description
+ *		Get address of the traced function (for tracing and kprobe programs).
+ *	Return
+ *		Address of the traced function.
+ *
+ * long bpf_task_pt_regs(struct task_struct *task)
+ *	Description
+ *		Get the struct pt_regs associated with **task**.
+ *	Return
+ *		A pointer to struct pt_regs.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
