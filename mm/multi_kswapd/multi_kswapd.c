@@ -30,15 +30,17 @@ int kswapd_unbind_cpu = -1;
 static void update_kswapd_threads_node(int nid)
 {
 	pg_data_t *pgdat;
-	int drop, increase;
-	int last_idx, start_idx, hid;
-	int nr_threads = kswapd_threads_current;
+	int increase;
+	int start_idx, hid;
+	int nr_threads;
 
 	pgdat = NODE_DATA(nid);
-	last_idx = nr_threads - 1;
+	for (nr_threads = 0; nr_threads < MAX_KSWAPD_THREADS; nr_threads++)
+		if (!pgdat->kswapd[nr_threads])
+			break;
+
 	if (kswapd_threads < nr_threads) {
-		drop = nr_threads - kswapd_threads;
-		for (hid = last_idx; hid > (last_idx - drop); hid--) {
+		for (hid = nr_threads - 1; hid >= kswapd_threads; hid--) {
 			if (pgdat->kswapd[hid]) {
 				kthread_stop(pgdat->kswapd[hid]);
 				pgdat->kswapd[hid] = NULL;
@@ -50,7 +52,7 @@ static void update_kswapd_threads_node(int nid)
 			upate_kswapd_unbind_cpu();
 #endif
 		increase = kswapd_threads - nr_threads;
-		start_idx = last_idx + 1;
+		start_idx = nr_threads;
 		for (hid = start_idx; hid < (start_idx + increase); hid++) {
 			pgdat->kswapd[hid] = kthread_run(kswapd, pgdat,
 						"kswapd%d:%d", nid, hid);
@@ -68,12 +70,10 @@ static void update_kswapd_threads_node(int nid)
 	}
 }
 
+
 void update_kswapd_threads(void)
 {
 	int nid;
-
-	if (kswapd_threads_current == kswapd_threads)
-		return;
 
 	/*
 	 * Hold the memory hotplug lock to avoid racing with memory
@@ -83,8 +83,9 @@ void update_kswapd_threads(void)
 	for_each_node_state(nid, N_MEMORY)
 		update_kswapd_threads_node(nid);
 
-	pr_info("kswapd_thread count changed, old:%d new:%d\n",
-		kswapd_threads_current, kswapd_threads);
+	if (kswapd_threads_current != kswapd_threads)
+		pr_info("kswapd_thread count changed, old:%d new:%d\n",
+			kswapd_threads_current, kswapd_threads);
 	kswapd_threads_current = kswapd_threads;
 	mem_hotplug_done();
 }
@@ -123,7 +124,8 @@ int kswapd_cpu_online_ext(unsigned int cpu)
 		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids)
 			for (hid = 0; hid < nr_threads; hid++) {
 				/* One of our CPUs online: restore mask */
-				set_cpus_allowed_ptr(pgdat->kswapd[hid], mask);
+				if (pgdat->kswapd[hid])
+					set_cpus_allowed_ptr(pgdat->kswapd[hid], mask);
 			}
 	}
 	return 0;
@@ -147,7 +149,8 @@ int cpu_callback_ext(struct notifier_block *nfb, unsigned long action,
 			if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids) {
 			for (hid = 0; hid < nr_threads; hid++) {
 				/* One of our CPUs online: restore mask */
-				set_cpus_allowed_ptr(pgdat->kswapd[hid], mask);
+				if (pgdat->kswapd[hid])
+					set_cpus_allowed_ptr(pgdat->kswapd[hid], mask);
 			}
 		}
 	}
@@ -162,26 +165,31 @@ int kswapd_run_ext(int nid)
 	int ret = 0;
 	int hid, nr_threads;
 
-	if (pgdat->kswapd[0])
+	nr_threads = kswapd_threads;
+	for (hid = 0; hid < MAX_KSWAPD_THREADS; hid++)
+		if (!pgdat->kswapd[hid])
+			break;
+
+	if (hid >= nr_threads)
 		return 0;
 
 #ifdef CONFIG_KSWAPD_UNBIND_MAX_CPU
 	if (kswapd_unbind_cpu == -1)
 		upate_kswapd_unbind_cpu();
 #endif
-	nr_threads = kswapd_threads;
-	for (hid = 0; hid < nr_threads; hid++) {
+	for (; hid < nr_threads; hid++) {
 		pgdat->kswapd[hid] = kthread_run(kswapd, pgdat, "kswapd%d:%d", nid, hid);
-			if (IS_ERR(pgdat->kswapd[hid])) {
-				/* failure at boot is fatal */
-				BUG_ON(system_state < SYSTEM_RUNNING);
-				pr_err("Failed to start kswapd%d on node %d\n",
-					hid, nid);
-				ret = PTR_ERR(pgdat->kswapd[hid]);
-				pgdat->kswapd[hid] = NULL;
-			}
+		if (IS_ERR(pgdat->kswapd[hid])) {
+			/* failure at boot is fatal */
+			BUG_ON(system_state < SYSTEM_RUNNING);
+			pr_err("Failed to start kswapd%d on node %d\n",
+				hid, nid);
+			ret = PTR_ERR(pgdat->kswapd[hid]);
+			pgdat->kswapd[hid] = NULL;
+			break;
 		}
-		kswapd_threads_current = nr_threads;
+	}
+	kswapd_threads_current = nr_threads;
 
 	return ret;
 }
@@ -200,4 +208,3 @@ void kswapd_stop_ext(int nid)
 		}
 	}
 }
-
