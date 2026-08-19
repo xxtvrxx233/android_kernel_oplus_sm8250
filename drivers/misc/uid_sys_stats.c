@@ -595,6 +595,19 @@ static void uid_perf_add_all_events(void)
 	}
 }
 
+static bool uid_perf_task_events_complete(struct task_struct *task)
+{
+	int i;
+
+	for (i = 0; i < UID_PERF_EVENTS; ++i) {
+		if (READ_ONCE(uid_perf_event_id[i]) != -1 &&
+			!task->uid_pevents[i])
+			return false;
+	}
+
+	return true;
+}
+
 void uid_check_out_pevent(struct task_struct *task)
 {
 	u64 val, enabled, running, delta, cg_delta = 0;
@@ -869,8 +882,9 @@ static void uid_perf_update_tasks(bool enable)
 	read_lock(&tasklist_lock);
 	for_each_process_thread(temp, task) {
 		if (enable) {
-			/* quick check if has any pevent exists, check next */
-			if (task->flags & PF_EXITING || task->uid_pevents[0])
+			/* Queue tasks with any configured event slot still missing. */
+			if (task->flags & PF_EXITING ||
+				uid_perf_task_events_complete(task))
 				continue;
 
 			uid_perf_work_add(task, true);
