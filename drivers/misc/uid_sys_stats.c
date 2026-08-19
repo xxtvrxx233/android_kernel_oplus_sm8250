@@ -37,6 +37,7 @@
 #include <linux/cpuset.h>
 #include <linux/cpufreq.h>
 #include <linux/kthread.h>
+#include <linux/mutex.h>
 #endif
 
 #define UID_HASH_BITS	10
@@ -373,6 +374,7 @@ module_param_array(uid_perf_event_type, int, NULL, 0664);
 module_param_array(uid_perf_event_pin, int, NULL, 0664);
 
 static DEFINE_SPINLOCK(uid_perf_lock);
+static DEFINE_MUTEX(uid_perf_state_lock);
 static struct task_struct *uid_perf_add_thread;
 static struct task_struct *uid_perf_remove_thread;
 static struct list_head uid_perf_add_list = LIST_HEAD_INIT(uid_perf_add_list);
@@ -381,7 +383,7 @@ static struct list_head uid_perf_remove_list = LIST_HEAD_INIT(uid_perf_remove_li
 static bool snapshot_active = false;
 bool get_uid_perf_enable(void)
 {
-	return (uid_perf_enable && snapshot_active);
+	return (READ_ONCE(uid_perf_enable) && READ_ONCE(snapshot_active));
 }
 
 struct uid_work {
@@ -394,7 +396,7 @@ void uid_perf_work_add(struct task_struct *task, bool force)
 	unsigned long flag;
 	struct uid_work *work;
 
-	if (!uid_perf_enable && !force)
+	if (!READ_ONCE(uid_perf_enable) && !force)
 		return;
 	if (IS_ERR_OR_NULL(uid_perf_add_thread))
 		return;
@@ -782,28 +784,27 @@ static int uid_perf_enable_store(const char *buf, const struct kernel_param *kp)
 	if (val != 0 && val != 1)
 		return -EINVAL;
 
-	if (uid_perf_enable == val)
+	mutex_lock(&uid_perf_state_lock);
+	if (READ_ONCE(uid_perf_enable) == val) {
+		mutex_unlock(&uid_perf_state_lock);
 		return 0;
+	}
 
-	if (val == 0)
-		uid_perf_enable = val;
-
+	WRITE_ONCE(uid_perf_enable, val);
 	uid_perf_update_tasks(val);
-
-	if (val == 1)
-		uid_perf_enable = val;
 
 	if (val && !IS_ERR_OR_NULL(uid_perf_add_thread))
 		wake_up_process(uid_perf_add_thread);
 	else if (!val && !IS_ERR_OR_NULL(uid_perf_remove_thread))
 		wake_up_process(uid_perf_remove_thread);
+	mutex_unlock(&uid_perf_state_lock);
 
 	return 0;
 }
 
 static int uid_perf_enable_show(char *buf, const struct kernel_param *kp)
 {
-	return snprintf(buf, PAGE_SIZE, "%d\n", uid_perf_enable);
+	return snprintf(buf, PAGE_SIZE, "%d\n", READ_ONCE(uid_perf_enable));
 }
 
 static struct kernel_param_ops uid_perf_enable_ops = {
@@ -829,11 +830,14 @@ static int __uid_perf_add_work(void *unused)
 			kfree(work);
 			spin_unlock_irqrestore(&uid_perf_lock, flag);
 
-			/* init perf event */
-			if (task && !(task->flags & PF_EXITING)) {
+			/* Serialize event creation with enable/disable transitions. */
+			mutex_lock(&uid_perf_state_lock);
+			if (READ_ONCE(uid_perf_enable) && task &&
+				!(task->flags & PF_EXITING)) {
 				for (i = 0; i < UID_PERF_EVENTS; ++i)
 					uid_create_and_enable_one_pevent(task, i, false);
 			}
+			mutex_unlock(&uid_perf_state_lock);
 			put_task_struct(task);
 			spin_lock_irqsave(&uid_perf_lock, flag);
 		}
@@ -864,11 +868,14 @@ static int __uid_perf_remove_work(void *unused)
 			kfree(work);
 			spin_unlock_irqrestore(&uid_perf_lock, flag);
 
-			/* remove perf event */
-			if (task && !(task->flags & PF_EXITING)) {
+			/* Serialize event removal with enable/disable transitions. */
+			mutex_lock(&uid_perf_state_lock);
+			if (!READ_ONCE(uid_perf_enable) && task &&
+				!(task->flags & PF_EXITING)) {
 				for (i = 0; i < UID_PERF_EVENTS; ++i)
 					uid_remove_and_disable_one_pevent(task, i);
 			}
+			mutex_unlock(&uid_perf_state_lock);
 			put_task_struct(task);
 			spin_lock_irqsave(&uid_perf_lock, flag);
 		}
@@ -1284,7 +1291,7 @@ static int __init proc_uid_sys_stats_init(void)
 		goto err;
 	}
 
-	if (uid_perf_enable)
+	if (READ_ONCE(uid_perf_enable))
 		uid_perf_update_tasks(true);
 #endif
 
