@@ -878,7 +878,7 @@ static void uid_perf_update_tasks(bool enable)
 {
 	struct task_struct *task, *temp;
 
-	/* TODO should protect from race */
+	/* Caller must hold uid_perf_state_lock. */
 	read_lock(&tasklist_lock);
 	for_each_process_thread(temp, task) {
 		if (enable) {
@@ -1425,8 +1425,11 @@ static int __init proc_uid_sys_stats_init(void)
 		goto err;
 	}
 
-	if (READ_ONCE(uid_perf_enable))
+	if (READ_ONCE(uid_perf_enable)) {
+		mutex_lock(&uid_perf_state_lock);
 		uid_perf_update_tasks(true);
+		mutex_unlock(&uid_perf_state_lock);
+	}
 #endif
 
 	return 0;
