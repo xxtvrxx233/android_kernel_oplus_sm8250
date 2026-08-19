@@ -166,6 +166,8 @@ extern int get_cpuset_cgrp_idx_by_name(const char *name);
 extern void cpuset_add_cg(int cgid, char* name);
 extern int cpuset_get_cgrp_idx(struct task_struct *task);
 extern int cpuset_get_cgrp_idx_locked(struct task_struct *task);
+extern void uid_perf_event_lock(void);
+extern void uid_perf_event_unlock(void);
 #endif
 
 #else /* !CONFIG_CPUSETS */

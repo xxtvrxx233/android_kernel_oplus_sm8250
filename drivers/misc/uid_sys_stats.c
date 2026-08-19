@@ -380,6 +380,16 @@ static struct task_struct *uid_perf_remove_thread;
 static struct list_head uid_perf_add_list = LIST_HEAD_INIT(uid_perf_add_list);
 static struct list_head uid_perf_remove_list = LIST_HEAD_INIT(uid_perf_remove_list);
 
+void uid_perf_event_lock(void)
+{
+	mutex_lock(&uid_perf_state_lock);
+}
+
+void uid_perf_event_unlock(void)
+{
+	mutex_unlock(&uid_perf_state_lock);
+}
+
 static bool snapshot_active = false;
 bool get_uid_perf_enable(void)
 {
@@ -509,6 +519,7 @@ void uid_check_out_pevent(struct task_struct *task)
 	int i, idx = -1;
 	struct task_struct *tgid = NULL;
 
+	mutex_lock(&uid_perf_state_lock);
 	for (i = 0; i < UID_PERF_EVENTS; ++i) {
 		if (task->uid_pevents[i]) {
 			val = perf_event_read_value(task->uid_pevents[i], &enabled, &running);
@@ -581,6 +592,7 @@ void uid_check_out_pevent(struct task_struct *task)
 
 	if (tgid)
 		put_task_struct(tgid);
+	mutex_unlock(&uid_perf_state_lock);
 }
 
 struct cpufreq_stats {
@@ -664,6 +676,7 @@ static int uid_perf_show(struct seq_file *m, void *v)
 			get_task_struct(task);
 			rcu_read_unlock();
 
+			mutex_lock(&uid_perf_state_lock);
 			seq_printf(m, "%s,%d,%d,%d", task->comm, task->pid, task->tgid, uid);
 			for (i = 0; i < UID_PERF_EVENTS; ++i) {
 				val[i] = 0;
@@ -719,6 +732,7 @@ static int uid_perf_show(struct seq_file *m, void *v)
 			if (snapshot_active)
 				reset_group_data(task);
 			put_task_struct(task);
+			mutex_unlock(&uid_perf_state_lock);
 		}
 	} while_each_thread(temp, task);
 	rcu_read_unlock();
@@ -735,7 +749,9 @@ static int uid_perf_show(struct seq_file *m, void *v)
 		seq_puts(m, "\n");
 	}
 	/*cpuset switch counting will be align snapshot_active scope */
-	snapshot_active = !snapshot_active;
+	mutex_lock(&uid_perf_state_lock);
+	WRITE_ONCE(snapshot_active, !READ_ONCE(snapshot_active));
+	mutex_unlock(&uid_perf_state_lock);
 
 	seq_printf(m, "%lld,%llu\n", time, uid_get_norm_cpu_time());
 	return 0;
