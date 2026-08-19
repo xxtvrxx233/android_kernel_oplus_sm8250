@@ -375,6 +375,7 @@ module_param_array(uid_perf_event_pin, int, NULL, 0664);
 
 static DEFINE_SPINLOCK(uid_perf_lock);
 static DEFINE_MUTEX(uid_perf_state_lock);
+static DEFINE_MUTEX(uid_perf_snapshot_lock);
 static struct task_struct *uid_perf_add_thread;
 static struct task_struct *uid_perf_remove_thread;
 static struct list_head uid_perf_add_list = LIST_HEAD_INIT(uid_perf_add_list);
@@ -667,6 +668,7 @@ static int uid_perf_show(struct seq_file *m, void *v)
 	u64 val[UID_PERF_EVENTS];
 	s64 time = ktime_to_ms(ktime_get());
 
+	mutex_lock(&uid_perf_snapshot_lock);
 	rcu_read_lock();
 	do_each_thread(temp, task) {
 		uid = from_kuid_munged(user_ns, task_uid(task));
@@ -754,6 +756,7 @@ static int uid_perf_show(struct seq_file *m, void *v)
 	mutex_unlock(&uid_perf_state_lock);
 
 	seq_printf(m, "%lld,%llu\n", time, uid_get_norm_cpu_time());
+	mutex_unlock(&uid_perf_snapshot_lock);
 	return 0;
 }
 
