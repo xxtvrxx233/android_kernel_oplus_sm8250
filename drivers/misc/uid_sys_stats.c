@@ -36,6 +36,7 @@
 #include <linux/freezer.h>
 #include <linux/cpuset.h>
 #include <linux/cpufreq.h>
+#include <linux/kthread.h>
 #endif
 
 #define UID_HASH_BITS	10
@@ -395,6 +396,8 @@ void uid_perf_work_add(struct task_struct *task, bool force)
 
 	if (!uid_perf_enable && !force)
 		return;
+	if (IS_ERR_OR_NULL(uid_perf_add_thread))
+		return;
 
 	work = kmalloc(sizeof(struct uid_work), GFP_ATOMIC);
 	if (!work)
@@ -416,6 +419,9 @@ static void uid_perf_work_remove(struct task_struct *task)
 {
 	unsigned long flag;
 	struct uid_work *work;
+
+	if (IS_ERR_OR_NULL(uid_perf_remove_thread))
+		return;
 
 	work = kmalloc(sizeof(struct uid_work), GFP_ATOMIC);
 	if (!work)
@@ -747,24 +753,14 @@ static const struct file_operations uid_perf_fops = {
 	.release	= single_release,
 };
 
-static int uid_perf_enable_store(const char *buf, const struct kernel_param *kp)
+static void uid_perf_update_tasks(bool enable)
 {
 	struct task_struct *task, *temp;
-	int val;
-
-	if (sscanf(buf, "%d\n", &val) <= 0)
-		return 0;
-
-	if (uid_perf_enable == val)
-		return 0;
-
-	if (val == 0)
-		uid_perf_enable = val;
 
 	/* TODO should protect from race */
 	read_lock(&tasklist_lock);
 	for_each_process_thread(temp, task) {
-		if (val) {
+		if (enable) {
 			/* quick check if has any pevent exists, check next */
 			if (task->flags & PF_EXITING || task->uid_pevents[0])
 				continue;
@@ -777,13 +773,31 @@ static int uid_perf_enable_store(const char *buf, const struct kernel_param *kp)
 		}
 	}
 	read_unlock(&tasklist_lock);
+}
+
+static int uid_perf_enable_store(const char *buf, const struct kernel_param *kp)
+{
+	int val;
+
+	if (sscanf(buf, "%d\n", &val) <= 0)
+		return -EINVAL;
+	if (val != 0 && val != 1)
+		return -EINVAL;
+
+	if (uid_perf_enable == val)
+		return 0;
+
+	if (val == 0)
+		uid_perf_enable = val;
+
+	uid_perf_update_tasks(val);
 
 	if (val == 1)
 		uid_perf_enable = val;
 
-	if (val)
+	if (val && !IS_ERR_OR_NULL(uid_perf_add_thread))
 		wake_up_process(uid_perf_add_thread);
-	else
+	else if (!val && !IS_ERR_OR_NULL(uid_perf_remove_thread))
 		wake_up_process(uid_perf_remove_thread);
 
 	return 0;
@@ -1204,6 +1218,9 @@ static struct notifier_block process_notifier_block = {
 
 static int __init proc_uid_sys_stats_init(void)
 {
+	int ret = -ENOMEM;
+	bool profile_registered = false;
+
 	hash_init(hash_table);
 
 	cpu_parent = proc_mkdir("uid_cputime", NULL);
@@ -1213,18 +1230,16 @@ static int __init proc_uid_sys_stats_init(void)
 		goto err;
 	}
 
-	proc_create_data("remove_uid_range", 0222, cpu_parent,
-		&uid_remove_fops, NULL);
-	proc_create_data("show_uid_stat", 0444, cpu_parent,
-		&uid_cputime_fops, NULL);
+	if (!proc_create_data("remove_uid_range", 0222, cpu_parent,
+			&uid_remove_fops, NULL) ||
+		!proc_create_data("show_uid_stat", 0444, cpu_parent,
+			&uid_cputime_fops, NULL))
+		goto err;
 
 #ifdef CONFIG_OPLUS_FEATURE_UID_PERF
-	proc_create_data("show_uid_perf", 0444, cpu_parent,
-		&uid_perf_fops, NULL);
-	uid_perf_add_thread = kthread_run(__uid_perf_add_work, NULL,
-					  "uid_add_thread");
-	uid_perf_remove_thread = kthread_run(__uid_perf_remove_work, NULL,
-					     "uid_remove_thread");
+	if (!proc_create_data("show_uid_perf", 0444, cpu_parent,
+			&uid_perf_fops, NULL))
+		goto err;
 #endif
 
 	io_parent = proc_mkdir("uid_io", NULL);
@@ -1234,8 +1249,9 @@ static int __init proc_uid_sys_stats_init(void)
 		goto err;
 	}
 
-	proc_create_data("stats", 0444, io_parent,
-		&uid_io_fops, NULL);
+	if (!proc_create_data("stats", 0444, io_parent,
+			&uid_io_fops, NULL))
+		goto err;
 
 	proc_parent = proc_mkdir("uid_procstat", NULL);
 	if (!proc_parent) {
@@ -1244,18 +1260,55 @@ static int __init proc_uid_sys_stats_init(void)
 		goto err;
 	}
 
-	proc_create_data("set", 0222, proc_parent,
-		&uid_procstat_fops, NULL);
+	if (!proc_create_data("set", 0222, proc_parent,
+			&uid_procstat_fops, NULL))
+		goto err;
 
-	profile_event_register(PROFILE_TASK_EXIT, &process_notifier_block);
+	ret = profile_event_register(PROFILE_TASK_EXIT, &process_notifier_block);
+	if (ret)
+		goto err;
+	profile_registered = true;
+
+#ifdef CONFIG_OPLUS_FEATURE_UID_PERF
+	uid_perf_add_thread = kthread_run(__uid_perf_add_work, NULL,
+					  "uid_add_thread");
+	if (IS_ERR_OR_NULL(uid_perf_add_thread)) {
+		ret = uid_perf_add_thread ? PTR_ERR(uid_perf_add_thread) : -ENOMEM;
+		uid_perf_add_thread = NULL;
+		goto err;
+	}
+
+	uid_perf_remove_thread = kthread_run(__uid_perf_remove_work, NULL,
+					     "uid_remove_thread");
+	if (IS_ERR_OR_NULL(uid_perf_remove_thread)) {
+		ret = uid_perf_remove_thread ? PTR_ERR(uid_perf_remove_thread) : -ENOMEM;
+		uid_perf_remove_thread = NULL;
+		goto err;
+	}
+
+	if (uid_perf_enable)
+		uid_perf_update_tasks(true);
+#endif
 
 	return 0;
 
 err:
+#ifdef CONFIG_OPLUS_FEATURE_UID_PERF
+	if (uid_perf_remove_thread) {
+		kthread_stop(uid_perf_remove_thread);
+		uid_perf_remove_thread = NULL;
+	}
+	if (uid_perf_add_thread) {
+		kthread_stop(uid_perf_add_thread);
+		uid_perf_add_thread = NULL;
+	}
+#endif
+	if (profile_registered)
+		profile_event_unregister(PROFILE_TASK_EXIT, &process_notifier_block);
 	remove_proc_subtree("uid_cputime", NULL);
 	remove_proc_subtree("uid_io", NULL);
 	remove_proc_subtree("uid_procstat", NULL);
-	return -ENOMEM;
+	return ret;
 }
 
 early_initcall(proc_uid_sys_stats_init);
