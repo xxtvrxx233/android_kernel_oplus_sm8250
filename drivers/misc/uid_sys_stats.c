@@ -502,9 +502,9 @@ static void uid_create_and_enable_one_pevent(struct task_struct *task, int idx, 
 void uid_check_out_pevent(struct task_struct *task)
 {
 	struct uid_entry *uid_entry = NULL;
-	u64 val, enabled, running, delta, cg_delta;
+	u64 val, enabled, running, delta, cg_delta = 0;
 	uid_t uid;
-	int i, idx;
+	int i, idx = -1;
 	struct task_struct *tgid = NULL;
 
 	for (i = 0; i < UID_PERF_EVENTS; ++i) {
@@ -516,8 +516,6 @@ void uid_check_out_pevent(struct task_struct *task)
 				idx = cpuset_get_cgrp_idx(task);
 				if (idx > -1)
 					cg_delta = val - task->uid_group_prev_counts[idx];
-				else
-					pr_err("%s: idx is invalid value idx=%d task=%s pid=%d", __func__, idx, task->comm, task->pid);
 			}
 			uid_remove_and_disable_one_pevent(task, i);
 

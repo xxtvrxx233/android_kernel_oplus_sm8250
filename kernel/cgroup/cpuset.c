@@ -1628,16 +1628,30 @@ static const struct file_operations dbg_fops = {
 void cpuset_add_cg(int cgid, char* name)
 {
 	struct cg_entry* cg;
+	unsigned long bkt;
+	unsigned int count = 0;
 
-	/* MUSTFIX: cgroup array of task_struct only has 8 buckets */
-	if (cgid > UID_GROUP_SIZE + 1)
+	/*
+	 * cgroup IDs are kernfs IDs and are not bounded by the number of
+	 * per-task accounting slots.  Keep the ID-to-slot mapping bounded,
+	 * rather than rejecting valid IDs above UID_GROUP_SIZE + 1.
+	 */
+	if (cgid <= 0)
 		return;
 
-        cg = kzalloc(sizeof(struct cg_entry), GFP_ATOMIC);
-        if (!cg)
-                return;
+	hash_for_each(cg_hash_table, bkt, cg, hash) {
+		if (cg->cgid == cgid)
+			return;
+		count++;
+	}
+	if (count >= UID_GROUP_SIZE)
+		return;
 
-        cg->cgid = cgid;
+	cg = kzalloc(sizeof(struct cg_entry), GFP_ATOMIC);
+	if (!cg)
+		return;
+
+	cg->cgid = cgid;
 	strncpy(cg->name, name, MAX_CGROUP_TYPE_NAMELEN);
 	hash_add(cg_hash_table, &cg->hash, cgid);
 }
