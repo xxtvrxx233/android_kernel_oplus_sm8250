@@ -1221,8 +1221,10 @@ static int __init proc_uid_sys_stats_init(void)
 #ifdef CONFIG_OPLUS_FEATURE_UID_PERF
 	proc_create_data("show_uid_perf", 0444, cpu_parent,
 		&uid_perf_fops, NULL);
-	uid_perf_add_thread = kthread_create(__uid_perf_add_work, NULL, "uid_add_thread");
-	uid_perf_remove_thread = kthread_create(__uid_perf_remove_work, NULL, "uid_remove_thread");
+	uid_perf_add_thread = kthread_run(__uid_perf_add_work, NULL,
+					  "uid_add_thread");
+	uid_perf_remove_thread = kthread_run(__uid_perf_remove_work, NULL,
+					     "uid_remove_thread");
 #endif
 
 	io_parent = proc_mkdir("uid_io", NULL);
