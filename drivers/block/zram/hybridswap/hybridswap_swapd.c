@@ -1838,7 +1838,7 @@ static int create_swapd_thread(struct zram *zram)
 
 error_out:
 	for_each_node(nid) {
-		pgdat = NODE_DATA(node);
+		pgdat = NODE_DATA(nid);
 
 		if (!PGDAT_ITEM_DATA(pgdat))
 			continue;
@@ -1862,7 +1862,7 @@ static void destroy_swapd_thread(void)
 
 	cpuhp_remove_state_nocalls(swapd_online);
 	for_each_node(nid) {
-		pgdat = NODE_DATA(node);
+		pgdat = NODE_DATA(nid);
 		if (!PGDAT_ITEM_DATA(pgdat))
 			continue;
 
