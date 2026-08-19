@@ -381,6 +381,7 @@ static struct task_struct *uid_perf_remove_thread;
 static struct list_head uid_perf_add_list = LIST_HEAD_INIT(uid_perf_add_list);
 static struct list_head uid_perf_remove_list = LIST_HEAD_INIT(uid_perf_remove_list);
 /* Protected by uid_perf_lock. */
+static bool uid_perf_add_all_pending;
 static bool uid_perf_remove_all_pending;
 
 void uid_perf_event_lock(void)
@@ -415,8 +416,14 @@ void uid_perf_work_add(struct task_struct *task, bool force)
 		return;
 
 	work = kmalloc(sizeof(struct uid_work), GFP_ATOMIC);
-	if (!work)
+	if (!work) {
+		/* A dropped add item must not leave an enabled task untracked. */
+		spin_lock_irqsave(&uid_perf_lock, flag);
+		uid_perf_add_all_pending = true;
+		spin_unlock_irqrestore(&uid_perf_lock, flag);
+		wake_up_process(uid_perf_add_thread);
 		return;
+	}
 
 	if (uid_perf_debug)
 		pr_err("add task %s %d to add list\n", task->comm, task->pid);
@@ -551,6 +558,40 @@ static void uid_create_and_enable_one_pevent(struct task_struct *task, int idx, 
 				pr_err("task %s %d pevent %d created\n",
 					task->comm, task->pid, idx);
 		}
+	}
+}
+
+static void uid_perf_add_all_events(void)
+{
+	struct task_struct *task = &init_task;
+	struct task_struct *next;
+	int i;
+
+	/*
+	 * Walk the global task list one referenced task at a time.  The RCU
+	 * section only covers finding and referencing the next task, so perf
+	 * event creation can sleep outside RCU.
+	 */
+	for (;;) {
+		rcu_read_lock();
+		next = next_task(task);
+		if (next != &init_task)
+			get_task_struct(next);
+		rcu_read_unlock();
+
+		if (task != &init_task)
+			put_task_struct(task);
+		if (next == &init_task)
+			break;
+		task = next;
+
+		mutex_lock(&uid_perf_state_lock);
+		if (READ_ONCE(uid_perf_enable) &&
+			!(task->flags & PF_EXITING)) {
+			for (i = 0; i < UID_PERF_EVENTS; ++i)
+				uid_create_and_enable_one_pevent(task, i, false);
+		}
+		mutex_unlock(&uid_perf_state_lock);
 	}
 }
 
@@ -888,6 +929,12 @@ static int __uid_perf_add_work(void *unused)
 	while (!kthread_should_stop()) {
 		set_current_state(TASK_RUNNING);
 		spin_lock_irqsave(&uid_perf_lock, flag);
+		if (uid_perf_add_all_pending) {
+			uid_perf_add_all_pending = false;
+			spin_unlock_irqrestore(&uid_perf_lock, flag);
+			uid_perf_add_all_events();
+			spin_lock_irqsave(&uid_perf_lock, flag);
+		}
 		while (!list_empty(&uid_perf_add_list)) {
 			struct uid_work *work =
 				list_first_entry(&uid_perf_add_list, struct uid_work, node);
