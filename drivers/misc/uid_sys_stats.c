@@ -514,9 +514,8 @@ static void uid_create_and_enable_one_pevent(struct task_struct *task, int idx, 
 
 void uid_check_out_pevent(struct task_struct *task)
 {
-	struct uid_entry *uid_entry = NULL;
 	u64 val, enabled, running, delta, cg_delta = 0;
-	uid_t uid;
+	uid_t uid = from_kuid_munged(current_user_ns(), task_uid(task));
 	int i, idx = -1;
 	struct task_struct *tgid = NULL;
 
@@ -548,11 +547,15 @@ void uid_check_out_pevent(struct task_struct *task)
 					2. leader task leave, add delta to uid entry
 				 */
 				if (tgid->pid == task->pid) {
-					if (!uid_entry) {
-						uid = from_kuid_munged(current_user_ns(), task_uid(tgid));
-						uid_entry = find_uid_entry(uid);
-					}
+					/*
+					 * remove_uid_range() can delete and free the hash
+					 * entry.  Do not retain the pointer across loop
+					 * iterations; look it up while holding uid_lock.
+					 */
+					struct uid_entry *uid_entry;
 
+					rt_mutex_lock(&uid_lock);
+					uid_entry = find_uid_entry(uid);
 					if (uid_entry) {
 						atomic64_add(delta, &uid_entry->checkout[i]);
 						/* MUSTFIX cgroup only calc instruction pevent */
@@ -572,6 +575,7 @@ void uid_check_out_pevent(struct task_struct *task)
 								task->uid_prev_counts[i]);
 						}
 					}
+					rt_mutex_unlock(&uid_lock);
 				} else {
 					/* TODO change to atomic */
 					tgid->uid_leaving_counts[i] += delta;
@@ -741,6 +745,7 @@ static int uid_perf_show(struct seq_file *m, void *v)
 
 	/* FIXME for some reasons this functions will be called while use 'cat' */
 	/* update early leave counter */
+	rt_mutex_lock(&uid_lock);
 	hash_for_each(hash_table, bkt, uid_entry, hash) {
 		seq_printf(m, "uid-%d,0,0,%d", uid_entry->uid, uid_entry->uid);
 		for (i = 0; i < UID_PERF_EVENTS; ++i)
@@ -750,6 +755,7 @@ static int uid_perf_show(struct seq_file *m, void *v)
 			seq_printf(m, ",%llu", atomic64_read(&uid_entry->cg_checkout[i]));
 		seq_puts(m, "\n");
 	}
+	rt_mutex_unlock(&uid_lock);
 	/*cpuset switch counting will be align snapshot_active scope */
 	mutex_lock(&uid_perf_state_lock);
 	WRITE_ONCE(snapshot_active, !READ_ONCE(snapshot_active));
