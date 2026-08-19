@@ -1453,4 +1453,4 @@ err:
 	return ret;
 }
 
-early_initcall(proc_uid_sys_stats_init);
+late_initcall(proc_uid_sys_stats_init);
