@@ -10,7 +10,7 @@ export SUBARCH=arm64
 
 # AnyKernel
 AK3_PATH=$KERNEL_ROOT/anykernel
-CUSTOM_AK3_NAME=BT-ReSukiSU-BPF-5.10
+CUSTOM_AK3_NAME=ReSukiSU-BPF-5.15-mysterious
 FULL_AK3_NAME=$CUSTOM_AK3_NAME-$(date +%Y-%m-%d)
 
 if [ ! -d "$AK3_PATH" ]; then
