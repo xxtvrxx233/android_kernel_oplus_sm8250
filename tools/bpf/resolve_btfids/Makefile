@@ -6,6 +6,10 @@ OUTPUT ?= $(if $(O),$(abspath $(O)),$(CURDIR))
 HOSTCC ?= gcc
 HOSTCFLAGS ?=
 CFLAGS := $(HOSTCFLAGS) -O2 -g -Wall -Wextra -std=gnu11
+# Prefer the kernel's own linux/btf.h (24-byte btf_header) over the host's
+# system header, which may carry newer layout fields that break the 5.15
+# BTF format. Using -I on a local dir only shadows this one header.
+CFLAGS += -I $(srctree)/tools/bpf/resolve_btfids/include
 CFLAGS += -idirafter $(srctree)/include/uapi
 LDFLAGS ?=
 
