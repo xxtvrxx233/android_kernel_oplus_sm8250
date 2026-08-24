@@ -140,3 +140,14 @@ kernel/configs/android-*.cfg
 #
 Android.bp
 out/
+
+#
+# Project-specific: local build toolchains, scripts and KernelSU
+#
+/KernelSU/
+/anykernel/
+/arch/arm64/configs/vendor/xx.config
+/build.log
+/build_xx.sh
+/drivers/kernelsu
+/zyc-clang-16/
