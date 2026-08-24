@@ -19,9 +19,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bc bison flex libssl-dev \
-            libelf-dev cpio \
-            python3 rsync wget git zip \
-            llvm lld
+            libelf-dev libdw-dev libbpf-dev zlib1g-dev \
+            cpio python3 rsync wget git zip \
+            llvm lld cmake build-essential
+
+      - name: Build pahole (>= 1.25 for --btf_features)
+        run: |
+          git clone -q --depth=1 --branch v1.31 https://github.com/acmel/dwarves.git /tmp/dwarves
+          cd /tmp/dwarves
+          mkdir -p build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ..
+          make -s -j$(nproc --all)
+          sudo make install
+          pahole --version
 
       - name: Cache Clang Toolchain
         id: cache-clang

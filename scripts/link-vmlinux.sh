@@ -186,8 +186,8 @@ gen_btf()
 	fi
 
 	pahole_ver=$(${PAHOLE} --version | sed -E 's/v([0-9]+)\.([0-9]+)/\1\2/')
-	if [ "${pahole_ver}" -lt "113" ]; then
-		info "BTF" "${1}: pahole version $(${PAHOLE} --version) is too old, need at least v1.13"
+	if [ "${pahole_ver}" -lt "125" ]; then
+		info "BTF" "${1}: pahole version $(${PAHOLE} --version) is too old, need at least v1.25"
 		return 1
 	fi
 
