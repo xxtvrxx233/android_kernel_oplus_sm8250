@@ -707,6 +707,7 @@ int verity_fec_ctr(struct dm_verity *v)
 	int r;
 	struct dm_verity_fec *f = v->fec;
 	struct dm_target *ti = v->ti;
+	struct mapped_device *md = dm_table_get_md(ti->table);
 	u64 hash_blocks;
 	int ret;
 
