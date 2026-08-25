@@ -4082,7 +4082,6 @@ static const struct file_operations touch_dir_proc_fops = {
 void init_kernel_grip_proc(struct proc_dir_entry *prEntry_tp,
 			   struct kernel_grip_info *grip_info)
 {
-	int ret = 0;
 	struct proc_dir_entry *prEntry_tmp = NULL;
 
 	if (!grip_info || !prEntry_tp) {
@@ -4093,17 +4092,7 @@ void init_kernel_grip_proc(struct proc_dir_entry *prEntry_tp,
 				       &tp_kernel_grip_fops, grip_info);
 
 	if (prEntry_tmp == NULL) {
-		ret = -ENOMEM;
 		TPD_INFO("%s: Couldn't create kernel grip proc entry, %d\n", __func__,
-			 __LINE__);
-	}
-
-	prEntry_tmp = proc_create_data("oplus_tp_direction", 0666, prEntry_tp,
-				       &touch_dir_proc_fops, grip_info);
-
-	if (prEntry_tmp == NULL) {
-		ret = -ENOMEM;
-		TPD_INFO("%s: Couldn't create oplus_tp_direction proc entry, %d\n", __func__,
 			 __LINE__);
 	}
 }

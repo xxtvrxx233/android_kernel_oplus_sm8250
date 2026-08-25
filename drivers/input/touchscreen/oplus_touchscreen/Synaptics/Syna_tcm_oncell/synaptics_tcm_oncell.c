@@ -2466,15 +2466,20 @@ static int syna_corner_limit_handle(struct syna_tcm_data *tcm_info)
     return ret;
 }
 
-static int syna_enable_edge_limit(struct syna_tcm_data *tcm_info)
+static int syna_enable_edge_limit(struct syna_tcm_data *tcm_info, bool enable)
 {
     int ret = 0;
     TPD_INFO("%s: enter\n", __func__);
 
-    ret = syna_tcm_set_dynamic_config(tcm_info, DC_GRIP_ENABLED, 0x01);
+    ret = syna_tcm_set_dynamic_config(tcm_info, DC_GRIP_ENABLED, enable ? 0x01 : 0x00);
     if (ret < 0) {
-        TPD_INFO("%s:failed to enable grip suppression\n", __func__);
+        TPD_INFO("%s:failed to %s grip suppression\n", __func__,
+                 enable ? "enable" : "disable");
         return ret;
+    }
+
+    if (!enable) {
+        return 0;
     }
 
     ret = syna_corner_limit_handle(tcm_info);
@@ -2517,9 +2522,10 @@ static int syna_mode_switch(void *chip_data, work_mode mode, bool flag)
         }
         break;
     case MODE_EDGE:
-        ret = syna_enable_edge_limit(tcm_info);
+        ret = syna_enable_edge_limit(tcm_info, flag);
         if (ret < 0) {
-            TPD_INFO("%s: failed to enable edg limit.\n", __func__);
+            TPD_INFO("%s: failed to %s edg limit.\n", __func__,
+                     flag ? "enable" : "disable");
         }
         break;
     case MODE_GAME:

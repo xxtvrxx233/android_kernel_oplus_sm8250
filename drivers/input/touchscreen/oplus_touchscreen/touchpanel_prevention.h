@@ -11,6 +11,8 @@
 #include <linux/seq_file.h>
 #include <linux/proc_fs.h>
 
+struct point_info;
+
 #define TOUCH_MAX_NUM               (10)
 #define GRIP_TAG_SIZE               (64)
 #define MAX_STRING_CNT              (15)
@@ -461,9 +463,10 @@ struct fw_grip_operations {
 struct kernel_grip_info *kernel_grip_init(struct device *dev);
 void init_kernel_grip_proc(struct proc_dir_entry *prEntry_tp,
 			   struct kernel_grip_info *grip_info);
+int notify_prevention_handle(struct kernel_grip_info *grip_info,
+			     int obj_attention, struct point_info *points);
 void grip_status_reset(struct kernel_grip_info *grip_info, uint8_t index);
 void kernel_grip_reset(struct kernel_grip_info *grip_info);
 int kernel_grip_print_func(struct seq_file *s, struct kernel_grip_info *grip_info);
 
 #endif /*_TOUCHPANEL_PREVENTION_H_*/
-
