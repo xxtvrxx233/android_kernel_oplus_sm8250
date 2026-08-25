@@ -2,7 +2,7 @@ name: Build kernel (non-ksu)
 
 on:
   push:
-    branches: [ mysterious ]
+    branches: [ mysterious-c17 ]
   workflow_dispatch:
 
 jobs:
