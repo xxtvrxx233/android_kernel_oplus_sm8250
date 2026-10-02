@@ -2,6 +2,8 @@
 //#ifdef VENDOR_EDIT
 #include "dsi-panel-oppo20161samsung-amb655xl08-1080-2400-90fps.dtsi"
 #include "dsi-panel-oppo20161samsung-amb655xl08-1080-2400-90fps-dvt.dtsi"
+/* 整机 XBL 上报 qcom,mdss_dsi_oppo20135samsung_amb655xl08_1080_2400_cmd_2 时用 */
+#include "dsi-panel-oppo20135samsung-amb655xl08-1080-2400-cmd-2.dtsi"
 
 &sde_dsi {
 	qcom,dsi-default-panel = <&dsi_oppo20161samsung_amb655xl08_1080_2400_cmd
@@ -15,6 +17,10 @@
 };
 
 &dsi_oppo20161samsung_amb655xl08_1080_2400_cmd_dvt {
+    pxlw,soft-iris-enable;
+};
+
+&dsi_oppo20135samsung_amb655xl08_1080_2400_cmd_2 {
     pxlw,soft-iris-enable;
 };
 
