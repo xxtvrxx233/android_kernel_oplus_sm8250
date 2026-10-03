@@ -71,6 +71,8 @@
 #include <linux/pid_namespace.h>
 #include <linux/security.h>
 #include <linux/spinlock.h>
+#include <linux/bitmap.h>
+#include <linux/cred.h>
 #include <linux/ratelimit.h>
 
 #include <uapi/linux/android/binder.h>
@@ -2033,6 +2035,152 @@ static struct binder_ref *binder_get_ref_olocked(struct binder_proc *proc,
 	return NULL;
 }
 
+#ifdef CONFIG_OPLUS_BINDER_REF_OPT
+/*
+ * Binder ref descriptor allocation optimization for system_server.
+ *
+ * The stock allocator walks the whole desc rbtree on every new ref to find
+ * the lowest unused descriptor: O(n) per ref, O(n^2) to fill n refs.
+ * system_server holds thousands of refs, so a bitmap that finds the lowest
+ * free bit replaces that walk with O(1) per ref.
+ *
+ * Only the process recognized as system_server is affected; every other
+ * process takes the original path, as does system_server itself once the
+ * bitmap is exhausted or found to be out of sync with refs_by_desc.
+ */
+#define OPLUS_SYSTEM_SERVER_UID		1000
+#define OPLUS_SYSTEM_SERVER_NAME	"system_server"
+#define OPLUS_BINDER_DEV_NAME		"binder"
+#define OPLUS_MAX_SYSTEM_SERVER_DESC	10048
+
+static unsigned long *oplus_free_ref;
+static unsigned int oplus_ref_opt_enable = 1;
+static struct binder_proc *oplus_system_server_proc;
+static DEFINE_SPINLOCK(oplus_ref_lock);
+
+module_param_named(binder_ref_opt, oplus_ref_opt_enable, uint, 0660);
+
+static void oplus_binder_desc_opt_init(struct binder_proc *proc)
+{
+	if (current_uid().val != OPLUS_SYSTEM_SERVER_UID)
+		return;
+
+	if (oplus_system_server_proc || !proc->tsk ||
+	    strncmp(proc->tsk->comm, OPLUS_SYSTEM_SERVER_NAME, TASK_COMM_LEN) ||
+	    !proc->context || !proc->context->name ||
+	    strcmp(proc->context->name, OPLUS_BINDER_DEV_NAME))
+		return;
+
+	spin_lock(&oplus_ref_lock);
+	oplus_system_server_proc = proc;
+	oplus_free_ref = bitmap_alloc(OPLUS_MAX_SYSTEM_SERVER_DESC, GFP_ATOMIC);
+	if (oplus_free_ref) {
+		bitmap_fill(oplus_free_ref, OPLUS_MAX_SYSTEM_SERVER_DESC);
+		/*
+		 * desc 0 belongs to the context manager and must never be
+		 * handed out from the bitmap.
+		 */
+		clear_bit(0, oplus_free_ref);
+		pr_info("oplus binder ref opt: system_server recognised\n");
+	}
+	spin_unlock(&oplus_ref_lock);
+}
+
+static void oplus_binder_desc_opt_free(struct binder_proc *proc)
+{
+	if (proc != oplus_system_server_proc)
+		return;
+
+	spin_lock(&oplus_ref_lock);
+	kfree(oplus_free_ref);
+	oplus_free_ref = NULL;
+	oplus_system_server_proc = NULL;
+	spin_unlock(&oplus_ref_lock);
+}
+
+static void oplus_binder_desc_opt_put(uint32_t ref_desc)
+{
+	/*
+	 * desc 0 is reserved for the context manager and was never taken
+	 * from the bitmap, so it must not be handed back to it either.
+	 */
+	if (ref_desc == 0 || ref_desc >= OPLUS_MAX_SYSTEM_SERVER_DESC)
+		return;
+
+	spin_lock(&oplus_ref_lock);
+	if (oplus_free_ref)
+		set_bit(ref_desc, oplus_free_ref);
+	spin_unlock(&oplus_ref_lock);
+}
+
+/*
+ * Take the lowest free descriptor from the bitmap.
+ *
+ * Returns true when @ref_desc was set from the bitmap, in which case the
+ * caller must skip the original desc scan and insert the ref directly.
+ * Returns false when the caller should take the original path: not
+ * system_server, optimization disabled, bitmap exhausted, or the bitmap
+ * was found to be out of sync and has been dropped.
+ *
+ * The caller holds proc->outer_lock, which serialises refs_by_desc; the
+ * bitmap has its own lock, always taken after outer_lock.
+ */
+static bool oplus_binder_desc_opt_alloc(struct binder_proc *proc, uint32_t *ref_desc)
+{
+	struct rb_node **p;
+	struct binder_ref *ref;
+	uint32_t first_free_place;
+
+	if (unlikely(!oplus_ref_opt_enable))
+		return false;
+
+	if (proc != oplus_system_server_proc)
+		return false;
+
+	spin_lock(&oplus_ref_lock);
+	if (!oplus_free_ref) {
+		spin_unlock(&oplus_ref_lock);
+		return false;
+	}
+
+	first_free_place = find_first_bit(oplus_free_ref,
+					  OPLUS_MAX_SYSTEM_SERVER_DESC);
+	if (first_free_place >= OPLUS_MAX_SYSTEM_SERVER_DESC) {
+		/* Bitmap exhausted: fall back to the original scan. */
+		spin_unlock(&oplus_ref_lock);
+		return false;
+	}
+
+	/*
+	 * The bitmap and the desc rbtree must agree. If this descriptor is
+	 * already taken the bitmap is stale, so drop it and let the original
+	 * scan take over for good. O(log n), not a walk.
+	 */
+	p = &proc->refs_by_desc.rb_node;
+	while (*p) {
+		ref = rb_entry(*p, struct binder_ref, rb_node_desc);
+		if (first_free_place < ref->data.desc) {
+			p = &(*p)->rb_left;
+		} else if (first_free_place > ref->data.desc) {
+			p = &(*p)->rb_right;
+		} else {
+			pr_err("oplus binder ref opt: desc %u already in use, dropping bitmap\n",
+			       first_free_place);
+			kfree(oplus_free_ref);
+			oplus_free_ref = NULL;
+			oplus_system_server_proc = NULL;
+			spin_unlock(&oplus_ref_lock);
+			return false;
+		}
+	}
+
+	*ref_desc = first_free_place;
+	clear_bit(first_free_place, oplus_free_ref);
+	spin_unlock(&oplus_ref_lock);
+	return true;
+}
+#endif /* CONFIG_OPLUS_BINDER_REF_OPT */
+
 /**
  * binder_get_ref_for_node_olocked() - get the ref associated with given node
  * @proc:	binder_proc that owns the ref
@@ -2084,12 +2232,24 @@ static struct binder_ref *binder_get_ref_for_node_olocked(
 	rb_insert_color(&new_ref->rb_node_node, &proc->refs_by_node);
 
 	new_ref->data.desc = (node == context->binder_context_mgr_node) ? 0 : 1;
+#ifdef CONFIG_OPLUS_BINDER_REF_OPT
+	/*
+	 * The context manager ref must keep desc 0, so it never comes from
+	 * the bitmap.
+	 */
+	if (new_ref->data.desc != 0 &&
+	    oplus_binder_desc_opt_alloc(proc, &new_ref->data.desc))
+		goto skip_desc_scan;
+#endif
 	for (n = rb_first(&proc->refs_by_desc); n != NULL; n = rb_next(n)) {
 		ref = rb_entry(n, struct binder_ref, rb_node_desc);
 		if (ref->data.desc > new_ref->data.desc)
 			break;
 		new_ref->data.desc = ref->data.desc + 1;
 	}
+#ifdef CONFIG_OPLUS_BINDER_REF_OPT
+skip_desc_scan:
+#endif
 
 	p = &proc->refs_by_desc.rb_node;
 	while (*p) {
@@ -2128,6 +2288,10 @@ static void binder_cleanup_ref_olocked(struct binder_ref *ref)
 
 	rb_erase(&ref->rb_node_desc, &ref->proc->refs_by_desc);
 	rb_erase(&ref->rb_node_node, &ref->proc->refs_by_node);
+#ifdef CONFIG_OPLUS_BINDER_REF_OPT
+	if (ref->proc == oplus_system_server_proc)
+		oplus_binder_desc_opt_put(ref->data.desc);
+#endif
 
 	binder_node_inner_lock(ref->node);
 	if (ref->data.strong)
@@ -5349,6 +5513,9 @@ static void binder_free_proc(struct binder_proc *proc)
 #ifdef CONFIG_OPLUS_BINDER_STRATEGY
 	obproc_free(proc);
 #endif
+#ifdef CONFIG_OPLUS_BINDER_REF_OPT
+	oplus_binder_desc_opt_free(proc);
+#endif
 	device = container_of(proc->context, struct binder_device, context);
 	if (refcount_dec_and_test(&device->ref)) {
 		kfree(proc->context->name);
@@ -5929,6 +6096,9 @@ static int binder_open(struct inode *nodp, struct file *filp)
 	filp->private_data = proc;
 #ifdef CONFIG_OPLUS_BINDER_STRATEGY
 	obtarget_init(proc);
+#endif
+#ifdef CONFIG_OPLUS_BINDER_REF_OPT
+	oplus_binder_desc_opt_init(proc);
 #endif
 
 	mutex_lock(&binder_procs_lock);

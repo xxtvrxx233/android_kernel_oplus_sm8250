@@ -59,6 +59,23 @@ config OPLUS_BINDER_STRATEGY
 	bool "config binder control"
 	help
 	  it helps to reduce anr by restricting background app binder behavior.
+
+config OPLUS_BINDER_REF_OPT
+	default n
+	bool "binder ref descriptor allocation optimization"
+	depends on ANDROID_BINDER_IPC
+	help
+	  Optimize binder ref descriptor allocation for system_server.
+
+	  The stock allocator walks the entire desc rbtree on every new ref to
+	  find the lowest unused descriptor, which is O(n) per ref and O(n^2)
+	  to fill n refs. system_server holds thousands of refs, so replacing
+	  that walk with a bitmap lookup makes descriptor allocation O(1).
+
+	  Only the process recognized as system_server is affected. If the
+	  bitmap is exhausted the original walk is used again.
+
+	  If unsure, say N.
 endif # if ANDROID
 
 endmenu
