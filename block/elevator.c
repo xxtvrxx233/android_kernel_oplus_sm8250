@@ -1012,30 +1012,22 @@ out:
  */
 int elevator_init_mq(struct request_queue *q)
 {
-	struct elevator_type *e;
-	int err = 0;
-
 	if (q->nr_hw_queues != 1)
 		return 0;
 
 	WARN_ON_ONCE(test_bit(QUEUE_FLAG_REGISTERED, &q->queue_flags));
 
-	if (unlikely(q->elevator))
-		goto out;
-	if (IS_ENABLED(CONFIG_IOSCHED_BFQ)) {
-		e = elevator_get(q, "bfq", false);
-		if (!e)
-			goto out;
-	} else {
-		e = elevator_get(q, "mq-deadline", false);
-		if (!e)
-			goto out;
-	}
-	err = blk_mq_init_sched(q, e);
-	if (err)
-		elevator_put(e);
-out:
-	return err;
+	/*
+	 * Deliberately leave q->elevator unset so a blk-mq device starts with
+	 * no I/O scheduler at all. That is the multi-queue counterpart of
+	 * noop on the legacy path: the device's own queueing does the work
+	 * and nothing is reordered on top of it.
+	 *
+	 * Upstream picks bfq here (mq-deadline when bfq is disabled). We keep
+	 * the no-scheduler default instead; a scheduler can still be selected
+	 * explicitly at runtime through sysfs.
+	 */
+	return 0;
 }
 
 
