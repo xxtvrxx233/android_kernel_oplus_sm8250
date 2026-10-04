@@ -11531,10 +11531,16 @@ int ufshcd_alloc_host(struct device *dev, struct ufs_hba **hba_handle)
 	}
 
 	/*
-	 * Do not use blk-mq at this time because blk-mq does not support
-	 * runtime pm.
+	 * Use blk-mq for UFS.
+	 *
+	 * The original "blk-mq does not support runtime pm" note still holds in
+	 * this kernel: blk_pm_runtime_init() calls pm_runtime_disable() for any
+	 * queue with mq_ops, so the UFS LUNs lose block-layer runtime PM and
+	 * will not runtime-suspend on their own. That is the price for getting
+	 * the multi-queue path, and with it mq-deadline/kyber/bfq, none of
+	 * which exist on the legacy single-queue path.
 	 */
-	host->use_blk_mq = false;
+	host->use_blk_mq = true;
 
 	hba = shost_priv(host);
 	hba->host = host;
