@@ -10,7 +10,7 @@ export SUBARCH=arm64
 
 # AnyKernel
 AK3_PATH=$KERNEL_ROOT/anykernel
-CUSTOM_AK3_NAME=ReSukiSU-BPF-5.15-mysterious
+CUSTOM_AK3_NAME=BakaSU-BPF-5.15-mysterious
 FULL_AK3_NAME=$CUSTOM_AK3_NAME-$(date +%Y-%m-%d)
 
 if [ ! -d "$AK3_PATH" ]; then
@@ -33,9 +33,9 @@ fi
 
 
 
-# ReSukiSU
+# BakaSU
 if [ ! -d "$KERNEL_ROOT/KernelSU" ]; then
-     curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+     curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
 fi
 
 echo "Preparing KSU build environment..."

@@ -14,7 +14,7 @@ export SUBARCH=arm64
 
 # AnyKernel
 AK3_PATH=$KERNEL_ROOT/anykernel
-CUSTOM_AK3_NAME=BT-ReSukiSU-BPF-5.10
+CUSTOM_AK3_NAME=BT-BakaSU-BPF-5.10
 FULL_AK3_NAME=$CUSTOM_AK3_NAME-$(date +%Y-%m-%d)
 
 if [ ! -d "$AK3_PATH" ]; then
@@ -26,8 +26,8 @@ if find $AK3_PATH -maxdepth 1 -type f -name "*.zip" | grep -q .; then
     find $AK3_PATH -maxdepth 1 -type f -name "*.zip" -delete
 fi
 
-# ReSukiSU
-curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+# BakaSU
+curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
 
 # Modify repo name
 BASE_VER=$(grep -oE 'expr [0-9]+' "$KERNEL_ROOT/KernelSU/kernel/Kbuild" | awk '{print $2}' || echo "30000")

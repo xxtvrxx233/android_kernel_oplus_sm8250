@@ -38,7 +38,7 @@ export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
 KERNEL_DEFCONFIG="vendor/kona-perf_defconfig"
 
-# Restore files modified by ReSukiSU
+# Restore files modified by BakaSU
 
 echo "Restoring drivers/Makefile and drivers/Kconfig from remote repository..."
 

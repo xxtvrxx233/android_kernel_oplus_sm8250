@@ -54,7 +54,7 @@ jobs:
       - name: Pack & Upload AnyKernel3 zip
         uses: actions/upload-artifact@v4
         with:
-          name: ReSukiSU-mysterious
+          name: BakaSU-mysterious
           path: anykernel/
 
       - name: Upload Build log
