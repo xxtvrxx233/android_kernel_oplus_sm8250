@@ -46,14 +46,22 @@ echo ">>> Version Name: $FINAL_KSU_VER"
 export KSU_MAKE_ARGS="REPO_NAME=xxtvrxx233-Github_actions KSU_VERSION_FULL=$FINAL_KSU_VER KSU_COMMIT_SHA=$KSU_HASH KSU_VERSION=$KSU_VERSION_CODE"
 
 # ---- drivers/Kconfig ----
-echo "Injecting KSU Kconfig entry..."
-echo "" >> "$KCONFIG_FILE"
-echo "$KSU_KCONFIG_LINE" >> "$KCONFIG_FILE"
+if ! grep -qF "$KSU_KCONFIG_LINE" "$KCONFIG_FILE"; then
+    echo "Injecting KSU Kconfig entry..."
+    echo "" >> "$KCONFIG_FILE"
+    echo "$KSU_KCONFIG_LINE" >> "$KCONFIG_FILE"
+else
+    echo "KSU Kconfig entry already present, skipping"
+fi
 
 # ---- drivers/Makefile ----
-echo "Injecting KSU Makefile entry..."
-echo "" >> "$MAKEFILE_FILE"
-echo "$KSU_MAKEFILE_LINE" >> "$MAKEFILE_FILE"
+if ! grep -qF "$KSU_MAKEFILE_LINE" "$MAKEFILE_FILE"; then
+    echo "Injecting KSU Makefile entry..."
+    echo "" >> "$MAKEFILE_FILE"
+    echo "$KSU_MAKEFILE_LINE" >> "$MAKEFILE_FILE"
+else
+    echo "KSU Makefile entry already present, skipping"
+fi
 
 # Clang Toolchain Logic
 if [ ! -d "$KERNEL_ROOT/zyc-clang-16/bin" ]; then
