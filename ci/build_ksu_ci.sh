@@ -27,7 +27,7 @@ if find $AK3_PATH -maxdepth 1 -type f -name "*.zip" | grep -q .; then
 fi
 
 # BakaSU
-curl -LSs "https://raw.githubusercontent.com/xxtvrxx233/BakaSU/main/kernel/setup.sh" | bash
+curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
 
 # Modify repo name
 BASE_VER=$(grep -oE 'expr [0-9]+' "$KERNEL_ROOT/KernelSU/kernel/Kbuild" | awk '{print $2}' || echo "30000")

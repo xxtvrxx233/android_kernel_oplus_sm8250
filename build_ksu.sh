@@ -35,7 +35,7 @@ fi
 
 # BakaSU
 if [ ! -d "$KERNEL_ROOT/KernelSU" ]; then
-     curl -LSs "https://raw.githubusercontent.com/xxtvrxx233/BakaSU/main/kernel/setup.sh" | bash
+     curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
 fi
 
 echo "Preparing KSU build environment..."
