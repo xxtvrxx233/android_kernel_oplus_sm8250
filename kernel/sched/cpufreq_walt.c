@@ -1184,12 +1184,21 @@ static void waltgov_exit(struct cpufreq_policy *policy)
 
 	mutex_lock(&global_tunables_lock);
 
+	/*
+	 * Save the tunables before dropping our reference: when it is the
+	 * last one, gov_attr_set_put() puts the kobject and
+	 * waltgov_tunables_free() kfrees the tunables synchronously, so
+	 * reading them afterwards is a use-after-free. The save is a no-op
+	 * while tunables are shared, and with per-policy tunables the
+	 * reference dropped below is always the last one, so saving
+	 * unconditionally is safe.
+	 */
+	waltgov_tunables_save(policy, tunables);
+
 	count = gov_attr_set_put(&tunables->attr_set, &sg_policy->tunables_hook);
 	policy->governor_data = NULL;
-	if (!count) {
-		waltgov_tunables_save(policy, tunables);
+	if (!count)
 		waltgov_clear_global_tunables();
-	}
 
 	mutex_unlock(&global_tunables_lock);
 
