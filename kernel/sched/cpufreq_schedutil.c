@@ -359,6 +359,9 @@ static unsigned int freq_to_targetload(
 	unsigned int ret;
 	unsigned long flags;
 
+	if (!tunables->target_loads || tunables->ntarget_loads <= 0)
+		return DEFAULT_TARGET_LOAD;
+
 	spin_lock_irqsave(&tunables->target_loads_lock, flags);
 
 	for (i = 0; i < tunables->ntarget_loads - 1 &&
@@ -460,6 +463,10 @@ static unsigned int freq_to_above_hispeed_delay(struct sugov_tunables *tunables,
 	unsigned long flags;
 	unsigned int ret;
 	int i;
+
+	if (!tunables->above_hispeed_delay ||
+	    tunables->nabove_hispeed_delay <= 0)
+		return 0;
 
 	spin_lock_irqsave(&tunables->above_hispeed_delay_lock, flags);
 
@@ -1724,8 +1731,12 @@ static void sugov_tunables_restore(struct cpufreq_policy *policy)
 	tunables->up_rate_limit_us = cached->up_rate_limit_us;
 	tunables->down_rate_limit_us = cached->down_rate_limit_us;
 #ifdef OPLUS_FEATURE_POWER_CPUFREQ
-	tunables->above_hispeed_delay = cached->above_hispeed_delay;
-	tunables->nabove_hispeed_delay = cached->nabove_hispeed_delay;
+	/* Do not override the defaults sugov_init() has just installed
+	 * with an unset table left over in the per-CPU cache. */
+	if (cached->above_hispeed_delay) {
+		tunables->above_hispeed_delay = cached->above_hispeed_delay;
+		tunables->nabove_hispeed_delay = cached->nabove_hispeed_delay;
+	}
 #endif
 }
 
@@ -1846,12 +1857,25 @@ static void sugov_exit(struct cpufreq_policy *policy)
 
 	mutex_lock(&global_tunables_lock);
 
+	/*
+	 * Save the tunables before dropping our reference: once the usage
+	 * count reaches zero, gov_attr_set_put() puts the kobject and
+	 * sugov_tunables_free() kfrees the tunables synchronously, so any
+	 * access afterwards is a use-after-free. A recycled or poisoned
+	 * slab would leave a garbage above_hispeed_delay pointer in the
+	 * per-CPU cache, which sugov_tunables_restore() would install and
+	 * freq_to_above_hispeed_delay() dereference from irq context.
+	 *
+	 * The save is a no-op while tunables are shared, and with
+	 * per-policy tunables the reference dropped below is always the
+	 * last one, so saving unconditionally is safe.
+	 */
+	sugov_tunables_save(policy, tunables);
+
 	count = gov_attr_set_put(&tunables->attr_set, &sg_policy->tunables_hook);
 	policy->governor_data = NULL;
-	if (!count) {
-		sugov_tunables_save(policy, tunables);
+	if (!count)
 		sugov_clear_global_tunables();
-	}
 
 	mutex_unlock(&global_tunables_lock);
 
