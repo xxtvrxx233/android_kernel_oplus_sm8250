@@ -1497,9 +1497,9 @@ static int context_struct_to_sid(struct selinux_state *state,
 }
 
 static int security_context_to_sid_core(struct selinux_state *state,
-					const char *scontext, u32 scontext_len,
-					u32 *sid, u32 def_sid, gfp_t gfp_flags,
-					int force)
+										const char *scontext, u32 scontext_len,
+										u32 *sid, u32 def_sid, gfp_t gfp_flags,
+										int force)
 {
 	struct policydb *policydb;
 	struct sidtab *sidtab;
@@ -1537,22 +1537,36 @@ static int security_context_to_sid_core(struct selinux_state *state,
 		if (!str)
 			goto out;
 	}
+
 	read_lock(&state->ss->policy_rwlock);
 	policydb = &state->ss->policydb;
 	sidtab = state->ss->sidtab;
+
+	/* 初始化 context，避免 context_destroy 释放野指针 */
+	memset(&context, 0, sizeof(context));
+
 	rc = string_to_context_struct(policydb, sidtab, scontext2,
-				      &context, def_sid);
+								  &context, def_sid);
 	if (rc == -EINVAL && force) {
 		context.str = str;
 		context.len = strlen(str) + 1;
 		str = NULL;
+		rc = 0;
 	} else if (rc)
 		goto out_unlock;
+	if (!context.user || !context.role || !context.type) {
+		pr_err("SELinux: %s: invalid context structure (user=%p role=%p type=%p)\n",
+			   __func__, context.user, context.role, context.type);
+		rc = -EINVAL;
+		context_destroy(&context);
+		goto out_unlock;
+	}
+
 	rc = context_struct_to_sid(state, &context, sid);
 	context_destroy(&context);
-out_unlock:
+	out_unlock:
 	read_unlock(&state->ss->policy_rwlock);
-out:
+	out:
 	kfree(scontext2);
 	kfree(str);
 	return rc;
