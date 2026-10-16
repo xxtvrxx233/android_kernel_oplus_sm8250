@@ -941,6 +941,13 @@ static long binder_stats_driver_ioctl(struct file *filp, unsigned int cmd, unsig
 	mutex_lock(&g_binder_stats_driver.lock);
 
 	switch (cmd) {
+
+	case 120: {
+            BINDER_STATS_LOGI("ColorOS 16 bypass: fake success for cmd 120\n");
+            ret = BINDER_STATS_CTL_RET_SUCC;
+        }
+        break;	
+
 	case BINDER_STATS_CTL_GET_VERSION: {
 			if (0 != arg) {
 				if(0 == copy_to_user((unsigned int *)arg,
