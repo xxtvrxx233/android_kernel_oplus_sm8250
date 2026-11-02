@@ -1,0 +1,103 @@
+name: Build kernel (pluggable)
+
+# 手动触发。原有的 push workflow（build.yml / build_ksu.yml）保持不变。
+on:
+  workflow_dispatch:
+    inputs:
+      enable_ksu:
+        description: 'Integrate KernelSU (true = BakaSU, false = none)'
+        required: true
+        type: boolean
+        default: true
+      droidspaces:
+        description: 'DroidSpaces container support (off = disabled, standard = containers, extend = extra test features)'
+        required: true
+        type: choice
+        default: 'off'
+        options:
+          - 'off'
+          - 'standard'
+          - 'extend'
+      rekernel:
+        description: 'Enable Re:Kernel integration'
+        required: true
+        type: boolean
+        default: false
+      nomount:
+        description: 'Enable NoMount integration'
+        required: true
+        type: boolean
+        default: false
+
+env:
+  KSU_TYPE: ${{ inputs.enable_ksu && 'bakasu' || 'none' }}
+  DROIDSPACES: ${{ github.event.inputs.droidspaces || 'off' }}
+  REKERNEL: ${{ github.event.inputs.rekernel || 'false' }}
+  NOMOUNT: ${{ github.event.inputs.nomount || 'false' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex libssl-dev \
+            libelf-dev libdw-dev libbpf-dev zlib1g-dev \
+            cpio python3 rsync wget git zip \
+            llvm lld cmake build-essential
+
+      - name: Build pahole (>= 1.25 for --btf_features)
+        run: |
+          git clone -q --depth=1 --branch v1.31 https://github.com/acmel/dwarves.git /tmp/dwarves
+          cd /tmp/dwarves
+          mkdir -p build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ..
+          make -s -j$(nproc --all)
+          sudo make install
+          pahole --version
+
+      - name: Cache Clang Toolchain
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: zyc-clang-16
+          key: clang-16.0.6-20250721-release
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          max-size: "2G"
+          key: kernel-ccache-${{ runner.os }}-${{ env.KSU_TYPE }}-${{ env.DROIDSPACES }}-${{ env.REKERNEL }}-${{ env.NOMOUNT }}
+          restore-keys: |
+            kernel-ccache-${{ runner.os }}-
+
+      - name: Show selected integrations
+        run: |
+          echo "enable_ksu -> KSU_TYPE=$KSU_TYPE"
+          echo "DROIDSPACES=$DROIDSPACES"
+          echo "REKERNEL=$REKERNEL"
+          echo "NOMOUNT=$NOMOUNT"
+
+      - name: Run build script
+        run: |
+          chmod +x ./ci/build_ksu_ci.sh
+          ./ci/build_ksu_ci.sh
+
+      - name: Pack & Upload AnyKernel3 zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.KSU_TYPE == 'bakasu' && 'BakaSU-mysterious' || 'mysterious' }}
+          path: anykernel/
+
+      - name: Upload Build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log

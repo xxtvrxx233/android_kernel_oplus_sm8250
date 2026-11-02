@@ -1,0 +1,228 @@
+diff --git a/include/linux/rekernel.h b/include/linux/rekernel.h
+new file mode 100644
+--- /dev/null
++++ b/include/linux/rekernel.h
+@@ -0,0 +1,32 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef _LINUX_REKERNEL_H
++#define _LINUX_REKERNEL_H
++
++#include <linux/errno.h>
++#include <linux/types.h>
++#include <linux/sched.h>
++
++#define REKERNEL_NETLINK_MIN		22
++#define REKERNEL_NETLINK_MAX		26
++#define REKERNEL_USER_PORT		100
++#define REKERNEL_PACKET_SIZE		128
++#define REKERNEL_MIN_USERAPP_UID	10000
++#define REKERNEL_MAX_SYSTEM_UID		2000
++#define REKERNEL_RESERVE_ORDER		17
++#define REKERNEL_WARN_AHEAD_SPACE	(1 << REKERNEL_RESERVE_ORDER)
++
++#ifdef CONFIG_REKERNEL
++
++int rekernel_start_server(void);
++int rekernel_send_message(const char *msg, uint16_t len);
++bool rekernel_line_is_frozen(struct task_struct *task);
++
++#else /* !CONFIG_REKERNEL */
++
++static inline int rekernel_start_server(void) { return -ENODEV; }
++static inline int rekernel_send_message(const char *msg, uint16_t len) { return -ENODEV; }
++static inline bool rekernel_line_is_frozen(struct task_struct *task) { return false; }
++
++#endif /* CONFIG_REKERNEL */
++
++#endif /* _LINUX_REKERNEL_H */
+diff --git a/drivers/rekernel/Kconfig b/drivers/rekernel/Kconfig
+new file mode 100644
+--- /dev/null
++++ b/drivers/rekernel/Kconfig
+@@ -0,0 +1,10 @@
++config REKERNEL
++	bool "Re:Kernel support"
++	depends on NET
++	default n
++	help
++	  Re:Kernel netlink notification support for frozen task detection.
++	  When enabled, binder and signal paths report events to userspace
++	  through a netlink socket (unit 22..25, port 100).
++
++	  Say N unless you use the Re:Kernel userspace daemon.
+diff --git a/drivers/rekernel/Makefile b/drivers/rekernel/Makefile
+new file mode 100644
+--- /dev/null
++++ b/drivers/rekernel/Makefile
+@@ -0,0 +1,1 @@
++obj-$(CONFIG_REKERNEL)		+= rekernel.o
+diff --git a/drivers/rekernel/rekernel.c b/drivers/rekernel/rekernel.c
+new file mode 100644
+--- /dev/null
++++ b/drivers/rekernel/rekernel.c
+@@ -0,0 +1,147 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Re:Kernel netlink notification server.
++ *
++ * Implemented for the non-GKI port: one netlink socket (unit 22..25) is
++ * created lazily on the first event and reported through /proc/rekernel.
++ * Applied at build time by CI only; never committed to the tree.
++ */
++
++#include <linux/init.h>
++#include <linux/types.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/fs.h>
++#include <linux/proc_fs.h>
++#include <linux/seq_file.h>
++#include <linux/string.h>
++#include <linux/freezer.h>
++#include <linux/sched.h>
++#include <linux/netlink.h>
++#include <net/sock.h>
++#include <net/net_namespace.h>
++
++#include <linux/rekernel.h>
++
++static struct sock *rekernel_netlink;
++static int rekernel_netlink_unit = REKERNEL_NETLINK_MIN;
++static struct proc_dir_entry *rekernel_dir;
++static struct proc_dir_entry *rekernel_unit_entry;
++static DEFINE_MUTEX(rekernel_lock);
++
++static void rekernel_netlink_recv(struct sk_buff *skb)
++{
++	/* Ignore recv msg. */
++}
++
++static struct netlink_kernel_cfg rekernel_cfg = {
++	.input = rekernel_netlink_recv,
++};
++
++static int rekernel_unit_show(struct seq_file *m, void *v)
++{
++	seq_printf(m, "%d\n", rekernel_netlink_unit);
++	return 0;
++}
++
++static int rekernel_unit_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, rekernel_unit_show, NULL);
++}
++
++static const struct file_operations rekernel_unit_fops = {
++	.open		= rekernel_unit_open,
++	.read		= seq_read,
++	.llseek		= seq_lseek,
++	.release	= single_release,
++	.owner		= THIS_MODULE,
++};
++
++int rekernel_start_server(void)
++{
++	int ret = 0;
++
++	mutex_lock(&rekernel_lock);
++	if (rekernel_netlink)
++		goto out;
++
++	for (rekernel_netlink_unit = REKERNEL_NETLINK_MIN;
++	     rekernel_netlink_unit < REKERNEL_NETLINK_MAX;
++	     rekernel_netlink_unit++) {
++		rekernel_netlink = netlink_kernel_create(&init_net,
++							 rekernel_netlink_unit,
++							 &rekernel_cfg);
++		if (rekernel_netlink)
++			break;
++	}
++	if (!rekernel_netlink) {
++		pr_err("Re:Kernel: failed to create netlink server\n");
++		ret = -ENOMEM;
++		goto out;
++	}
++	pr_info("Re:Kernel: netlink unit %d\n", rekernel_netlink_unit);
++
++	rekernel_dir = proc_mkdir("rekernel", NULL);
++	if (!rekernel_dir) {
++		pr_err("Re:Kernel: failed to create /proc/rekernel\n");
++		ret = -ENOMEM;
++		goto err_netlink;
++	}
++
++	{
++		char name[16];
++
++		snprintf(name, sizeof(name), "%d", rekernel_netlink_unit);
++		rekernel_unit_entry = proc_create(name, 0644, rekernel_dir,
++						  &rekernel_unit_fops);
++		if (!rekernel_unit_entry) {
++			pr_err("Re:Kernel: failed to create unit entry\n");
++			ret = -ENOMEM;
++			goto err_dir;
++		}
++	}
++	goto out;
++
++err_dir:
++	proc_remove(rekernel_dir);
++	rekernel_dir = NULL;
++err_netlink:
++	netlink_kernel_release(rekernel_netlink);
++	rekernel_netlink = NULL;
++out:
++	mutex_unlock(&rekernel_lock);
++	return ret;
++}
++
++int rekernel_send_message(const char *msg, uint16_t len)
++{
++	struct sk_buff *skb;
++	struct nlmsghdr *nlh;
++
++	if (!rekernel_netlink)
++		return -ENODEV;
++	if (len > REKERNEL_PACKET_SIZE)
++		return -EMSGSIZE;
++
++	skb = nlmsg_new(len, GFP_ATOMIC);
++	if (!skb)
++		return -ENOMEM;
++
++	nlh = nlmsg_put(skb, 0, 0, rekernel_netlink_unit, len, 0);
++	if (!nlh) {
++		nlmsg_free(skb);
++		return -ENOMEM;
++	}
++
++	memcpy(nlmsg_data(nlh), msg, len);
++	return netlink_unicast(rekernel_netlink, skb, REKERNEL_USER_PORT,
++			       MSG_DONTWAIT);
++}
++
++bool rekernel_line_is_frozen(struct task_struct *task)
++{
++	if (!task)
++		return false;
++
++	return frozen(task->group_leader) || freezing(task->group_leader);
++}
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -239,4 +239,6 @@
+ source "drivers/nfc/p73-spi/Kconfig"
+ #endif /*OPLUS_NFC_BRINGUP*/
+ 
++source "drivers/rekernel/Kconfig"
++
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -193,3 +193,4 @@
+ obj-$(CONFIG_GNSS)		+= gnss/
+ obj-$(CONFIG_SENSORS_SSC)	+= sensors/
+ obj-$(CONFIG_SENSORS_SIMULATED_HALL)	+= sensors/
++obj-$(CONFIG_REKERNEL)		+= rekernel/

@@ -1,0 +1,121 @@
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -54,6 +54,7 @@
+ #include <linux/fdtable.h>
+ #include <linux/file.h>
+ #include <linux/freezer.h>
++#include <linux/rekernel.h>
+ #include <linux/fs.h>
+ #include <linux/list.h>
+ #include <linux/miscdevice.h>
+@@ -3743,6 +3744,20 @@
+ 		target_proc = target_thread->proc;
+ 		target_proc->tmp_ref++;
+ 		binder_inner_proc_unlock(target_thread->proc);
++
++		if (rekernel_start_server() == 0 &&
++		    target_proc && target_proc->tsk && proc->tsk &&
++		    task_uid(target_proc->tsk).val <= REKERNEL_MAX_SYSTEM_UID &&
++		    proc->pid != target_proc->pid &&
++		    rekernel_line_is_frozen(target_proc->tsk)) {
++			char rekernel_msg[REKERNEL_PACKET_SIZE];
++
++			snprintf(rekernel_msg, sizeof(rekernel_msg),
++				 "type=Binder,bindertype=reply,oneway=0,from_pid=%d,from=%d,target_pid=%d,target=%d;",
++				 proc->pid, task_uid(proc->tsk).val,
++				 target_proc->pid, task_uid(target_proc->tsk).val);
++			rekernel_send_message(rekernel_msg, strlen(rekernel_msg));
++		}
+ 	} else {
+ 		if (tr->target.handle) {
+ 			struct binder_ref *ref;
+@@ -3815,6 +3830,21 @@
+ #endif
+ 
+ 		e->to_node = target_node->debug_id;
++
++		if (rekernel_start_server() == 0 &&
++		    target_proc && target_proc->tsk && proc->tsk &&
++		    task_uid(target_proc->tsk).val > REKERNEL_MIN_USERAPP_UID &&
++		    proc->pid != target_proc->pid &&
++		    rekernel_line_is_frozen(target_proc->tsk)) {
++			char rekernel_msg[REKERNEL_PACKET_SIZE];
++
++			snprintf(rekernel_msg, sizeof(rekernel_msg),
++				 "type=Binder,bindertype=transaction,oneway=%d,from_pid=%d,from=%d,target_pid=%d,target=%d;",
++				 tr->flags & TF_ONE_WAY, proc->pid,
++				 task_uid(proc->tsk).val, target_proc->pid,
++				 task_uid(target_proc->tsk).val);
++			rekernel_send_message(rekernel_msg, strlen(rekernel_msg));
++		}
+ 		if (security_binder_transaction(proc->cred,
+ 						target_proc->cred) < 0) {
+ 			return_error = BR_FAILED_REPLY;
+diff --git a/drivers/android/binder_alloc.c b/drivers/android/binder_alloc.c
+--- a/drivers/android/binder_alloc.c
++++ b/drivers/android/binder_alloc.c
+@@ -26,6 +26,7 @@
+ #include <linux/vmalloc.h>
+ #include <linux/slab.h>
+ #include <linux/sched.h>
++#include <linux/rekernel.h>
+ #include <linux/list_lru.h>
+ #include <linux/ratelimit.h>
+ #include <asm/cacheflush.h>
+@@ -446,6 +447,26 @@
+ 		}
+ 	}
+ #endif /*OPLUS_FEATURE_HANS_FREEZE*/
++
++	if (is_async &&
++	    (alloc->free_async_space < 3 * (size + sizeof(struct binder_buffer)) ||
++	     alloc->free_async_space < REKERNEL_WARN_AHEAD_SPACE)) {
++		struct task_struct *rekernel_task;
++
++		rcu_read_lock();
++		rekernel_task = find_task_by_vpid(alloc->pid);
++		rcu_read_unlock();
++		if (rekernel_task && rekernel_start_server() == 0 &&
++		    rekernel_line_is_frozen(rekernel_task)) {
++			char rekernel_msg[REKERNEL_PACKET_SIZE];
++
++			snprintf(rekernel_msg, sizeof(rekernel_msg),
++				 "type=Binder,bindertype=free_buffer_full,oneway=1,from_pid=%d,from=%d,target_pid=%d,target=%d;",
++				 current->pid, task_uid(current).val,
++				 rekernel_task->pid, task_uid(rekernel_task).val);
++			rekernel_send_message(rekernel_msg, strlen(rekernel_msg));
++		}
++	}
+ 
+ 	if (is_async && alloc->free_async_space < size) {
+ 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
+diff --git a/kernel/signal.c b/kernel/signal.c
+--- a/kernel/signal.c
++++ b/kernel/signal.c
+@@ -34,6 +34,7 @@
+ #include <linux/tracehook.h>
+ #include <linux/capability.h>
+ #include <linux/freezer.h>
++#include <linux/rekernel.h>
+ #include <linux/pid_namespace.h>
+ #include <linux/nsproxy.h>
+ #include <linux/user_namespace.h>
+@@ -1327,6 +1328,17 @@
+ 	}
+ #endif /*OPLUS_FEATURE_HANS_FREEZE*/
+ 
++	if (rekernel_start_server() == 0 && rekernel_line_is_frozen(current) &&
++	    (sig == SIGKILL || sig == SIGTERM || sig == SIGABRT || sig == SIGQUIT)) {
++		char rekernel_msg[REKERNEL_PACKET_SIZE];
++
++		snprintf(rekernel_msg, sizeof(rekernel_msg),
++			 "type=Signal,signal=%d,killer_pid=%d,killer=%d,dst_pid=%d,dst=%d;",
++			 sig, task_tgid_nr(current), task_uid(current).val,
++			 task_tgid_nr(p), task_uid(p).val);
++		rekernel_send_message(rekernel_msg, strlen(rekernel_msg));
++	}
++
+ #if defined(CONFIG_CFS_BANDWIDTH)
+         if (is_belong_cpugrp(p)  /*signal receiver thread group is cpuctl?*/
+                 && (sig == SIGKILL || sig == SIGTERM || sig == SIGABRT || sig == SIGQUIT)) {

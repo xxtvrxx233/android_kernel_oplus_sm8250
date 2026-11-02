@@ -38,6 +38,14 @@ export CLANG_PATH=$KERNEL_ROOT/zyc-clang-16/bin
 export PATH="$CLANG_PATH:$PATH"
 export CROSS_COMPILE=aarch64-linux-gnu-
 export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+export CC="ccache clang"
+export AR=llvm-ar
+export NM=llvm-nm
+export OBJCOPY=llvm-objcopy
+export OBJDUMP=llvm-objdump
+export STRIP=llvm-strip
+export LLVM=1
+export LLVM_IAS=1
 
 KERNEL_DEFCONFIG="vendor/kona-perf_defconfig"
 
@@ -48,6 +56,12 @@ echo
 
 echo "=== KERNEL CONFIGURATION LOG ===" > "$KERNEL_ROOT/build.log"
 make CC="ccache clang" AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 LLVM_IAS=1 O=out $KERNEL_DEFCONFIG 2>&1 | tee -a "$KERNEL_ROOT/build.log"
+
+
+export KERNEL_ROOT
+export CI_OUT="$KERNEL_ROOT/out"
+export CI_CONFIG="$KERNEL_ROOT/out/.config"
+bash "$KERNEL_ROOT/ci/integrations/apply_extras.sh" || exit 1
 
 echo "=== KERNEL COMPILATION LOG ===" >> "$KERNEL_ROOT/build.log"
 make CC="ccache clang" AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 LLVM_IAS=1 O=out -j$(nproc --all) 2>&1 | tee -a "$KERNEL_ROOT/build.log"

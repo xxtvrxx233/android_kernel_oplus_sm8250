@@ -1,0 +1,5 @@
+# 内核根 .gitignore 默认忽略 *.patch，这里放行集成补丁
+!.gitignore
+!*.patch
+!patches/
+!patches/**

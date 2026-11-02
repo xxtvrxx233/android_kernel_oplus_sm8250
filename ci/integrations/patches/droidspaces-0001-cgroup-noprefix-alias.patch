@@ -1,0 +1,26 @@
+--- a/kernel/cgroup/cgroup.c
++++ b/kernel/cgroup/cgroup.c
+@@ -3949,6 +3949,23 @@
+ 		spin_unlock_irq(&cgroup_file_kn_lock);
+ 	}
+ 
++	/*
++	 * DroidSpaces: on NOPREFIX roots only the bare cftype name is exposed.
++	 * Add the prefixed alias as well so both "name" and "subsys.name" resolve.
++	 * Applied at build time by CI only; never committed to the tree.
++	 */
++	if (cft->ss && (cgrp->root->flags & CGRP_ROOT_NOPREFIX) &&
++	    !(cft->flags & CFTYPE_NO_PREFIX)) {
++		const char *ss_name = cgroup_on_dfl(cgrp) ?
++				      cft->ss->name : cft->ss->legacy_name;
++
++		if (!ss_name)
++			ss_name = cft->ss->name;
++		snprintf(name, CGROUP_FILE_NAME_MAX, "%s.%s", ss_name,
++			 cft->name);
++		kernfs_create_link(cgrp->kn, name, kn);
++	}
++
+ 	return 0;
+ }
+ 

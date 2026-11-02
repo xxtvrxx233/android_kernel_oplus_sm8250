@@ -1,0 +1,19 @@
+diff --git a/fs/Kconfig b/fs/Kconfig
+--- a/fs/Kconfig
++++ b/fs/Kconfig
+@@ -332,4 +332,6 @@
+ #endif /*OPLUS_FEATURE_EXFAT_SUPPORT*/
+ source "fs/unicode/Kconfig"
+ 
+-endmenu
++source "fs/nomount/Kconfig"
++
++endmenu
+diff --git a/fs/Makefile b/fs/Makefile
+--- a/fs/Makefile
++++ b/fs/Makefile
+@@ -144,3 +144,4 @@
+ #ifdef OPLUS_FEATURE_EXFAT_SUPPORT
+ obj-$(CONFIG_EXFAT_FS)		+= exfat/
+ #endif /*OPLUS_FEATURE_EXFAT_SUPPORT*/
++obj-$(CONFIG_NOMOUNT)		+= nomount/
