@@ -85,6 +85,25 @@ jobs:
           echo "REKERNEL=$REKERNEL"
           echo "NOMOUNT=$NOMOUNT"
 
+      - name: Compute AK3 name
+        id: ak3name
+        run: |
+          name="mysterious"
+          if [ "$KSU_TYPE" = "bakasu" ]; then
+            name="BakaSU-$name"
+          fi
+          if [ -n "$DROIDSPACES" ] && [ "$DROIDSPACES" != "off" ]; then
+            name="$name-droidspaces"
+          fi
+          if [ "$REKERNEL" = "true" ]; then
+            name="$name-rekernel"
+          fi
+          if [ "$NOMOUNT" = "true" ]; then
+            name="$name-nomount"
+          fi
+          echo "AK3 name: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
       - name: Run build script
         run: |
           chmod +x ./ci/build_ksu_ci.sh
@@ -93,7 +112,7 @@ jobs:
       - name: Pack & Upload AnyKernel3 zip
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.KSU_TYPE == 'bakasu' && 'BakaSU-mysterious' || 'mysterious' }}
+          name: ${{ steps.ak3name.outputs.name }}
           path: anykernel/
 
       - name: Upload Build log
