@@ -30,7 +30,7 @@ on:
         default: false
 
 env:
-  KSU_TYPE: ${{ inputs.enable_ksu && 'bakasu' || 'none' }}
+  ENABLE_KSU: ${{ github.event.inputs.enable_ksu || 'false' }}
   DROIDSPACES: ${{ github.event.inputs.droidspaces || 'off' }}
   REKERNEL: ${{ github.event.inputs.rekernel || 'false' }}
   NOMOUNT: ${{ github.event.inputs.nomount || 'false' }}
@@ -74,13 +74,13 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           max-size: "2G"
-          key: kernel-ccache-${{ runner.os }}-${{ env.KSU_TYPE }}-${{ env.DROIDSPACES }}-${{ env.REKERNEL }}-${{ env.NOMOUNT }}
+          key: kernel-ccache-${{ runner.os }}-${{ env.ENABLE_KSU }}-${{ env.DROIDSPACES }}-${{ env.REKERNEL }}-${{ env.NOMOUNT }}
           restore-keys: |
             kernel-ccache-${{ runner.os }}-
 
       - name: Show selected integrations
         run: |
-          echo "enable_ksu -> KSU_TYPE=$KSU_TYPE"
+          echo "ENABLE_KSU=$ENABLE_KSU"
           echo "DROIDSPACES=$DROIDSPACES"
           echo "REKERNEL=$REKERNEL"
           echo "NOMOUNT=$NOMOUNT"
@@ -89,7 +89,7 @@ jobs:
         id: ak3name
         run: |
           name="mysterious"
-          if [ "$KSU_TYPE" = "bakasu" ]; then
+          if [ "$ENABLE_KSU" = "true" ]; then
             name="BakaSU-$name"
           fi
           if [ -n "$DROIDSPACES" ] && [ "$DROIDSPACES" != "off" ]; then
@@ -106,8 +106,13 @@ jobs:
 
       - name: Run build script
         run: |
-          chmod +x ./ci/build_ksu_ci.sh
-          ./ci/build_ksu_ci.sh
+          if [ "$ENABLE_KSU" = "true" ]; then
+            chmod +x ./ci/build_ksu_ci.sh
+            ./ci/build_ksu_ci.sh
+          else
+            chmod +x ./ci/build_ci.sh
+            ./ci/build_ci.sh
+          fi
 
       - name: Pack & Upload AnyKernel3 zip
         uses: actions/upload-artifact@v4
