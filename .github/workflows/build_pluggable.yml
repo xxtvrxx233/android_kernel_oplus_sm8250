@@ -37,10 +37,10 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -65,13 +65,13 @@ jobs:
 
       - name: Cache Clang Toolchain
         id: cache-clang
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: zyc-clang-16
           key: clang-16.0.6-20250721-release
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.24
         with:
           max-size: "2G"
           key: kernel-ccache-${{ runner.os }}-${{ env.ENABLE_KSU }}-${{ env.DROIDSPACES }}-${{ env.REKERNEL }}-${{ env.NOMOUNT }}
@@ -115,13 +115,13 @@ jobs:
           fi
 
       - name: Pack & Upload AnyKernel3 zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.ak3name.outputs.name }}
           path: anykernel/
 
       - name: Upload Build log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-log
           path: build.log
