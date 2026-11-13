@@ -420,6 +420,7 @@ struct sk_buff *rmnet_map_deaggregate(struct sk_buff *skb,
 		skbn = alloc_skb(RMNET_MAP_DEAGGR_HEADROOM, GFP_ATOMIC);
 		if (!skbn)
 			return NULL;
+		skbn->dev = skb->dev;
 
 		skb_append_pagefrags(skbn, page, frag0->page_offset,
 				     packet_len);
@@ -430,6 +431,7 @@ struct sk_buff *rmnet_map_deaggregate(struct sk_buff *skb,
 				 GFP_ATOMIC);
 		if (!skbn)
 			return NULL;
+		skbn->dev = skb->dev;
 
 		skb_reserve(skbn, RMNET_MAP_DEAGGR_HEADROOM);
 		skb_put(skbn, packet_len);
