@@ -73,9 +73,10 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2.24
         with:
-          max-size: "2G"
+          max-size: "4G"
           key: kernel-ccache-${{ runner.os }}-${{ env.ENABLE_KSU }}-${{ env.DROIDSPACES }}-${{ env.REKERNEL }}-${{ env.NOMOUNT }}
           restore-keys: |
+            kernel-ccache-${{ runner.os }}-${{ env.ENABLE_KSU }}-
             kernel-ccache-${{ runner.os }}-
 
       - name: Show selected integrations
