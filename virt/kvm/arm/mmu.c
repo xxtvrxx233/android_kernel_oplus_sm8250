@@ -1555,7 +1555,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * change made once we drop mmap_sem.
 	 */
 	mmu_seq = vcpu->kvm->mmu_notifier_seq;
-	up_read(&current->mm->mmap_sem);
+	mmap_read_unlock(current->mm);
 
 	/*
 	 * Ensure the read of mmu_notifier_seq happens before we call

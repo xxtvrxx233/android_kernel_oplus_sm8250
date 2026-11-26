@@ -546,7 +546,8 @@ static int hhf_change(struct Qdisc *sch, struct nlattr *opt,
 	if (!opt)
 		return -EINVAL;
 
-	err = nla_parse_nested(tb, TCA_HHF_MAX, opt, hhf_policy, extack);
+	err = nla_parse_nested_deprecated(tb, TCA_HHF_MAX, opt, hhf_policy,
+					  extack);
 	if (err < 0)
 		return err;
 

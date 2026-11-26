@@ -126,10 +126,8 @@ static int bpf_output(struct net *net, struct sock *sk, struct sk_buff *skb)
 	return dst->lwtstate->orig_output(net, sk, skb);
 }
 
-static int xmit_check_headroom(struct sk_buff *skb)
+static int xmit_check_headroom(struct sk_buff *skb, int hroom)
 {
-	int hroom = LL_RESERVED_SPACE(skb_dst(skb)->dev);
-
 	if (skb_headroom(skb) < hroom) {
 		int nhead = hroom - skb_headroom(skb);
 
@@ -147,18 +145,28 @@ static int bpf_xmit(struct sk_buff *skb)
 
 	bpf = bpf_lwt_lwtunnel(dst->lwtstate);
 	if (bpf->xmit.prog) {
+		int hroom = LL_RESERVED_SPACE(dst->dev);
+		__be16 proto = skb->protocol;
 		int ret;
 
 		ret = run_lwt_bpf(skb, &bpf->xmit, dst, CAN_REDIRECT);
 		switch (ret) {
 		case BPF_OK:
+			/* If the header changed, e.g. via bpf_lwt_push_encap,
+			 * BPF_LWT_REROUTE below should have been used if the
+			 * protocol was also changed.
+			 */
+			if (skb->protocol != proto) {
+				kfree_skb(skb);
+				return -EINVAL;
+			}
 			/* If the header was expanded, headroom might be too
 			 * small for the L2 header to come, expand as needed.
 			 * neigh_hh_output() copies the cached header in
 			 * HH_DATA_MOD aligned chunks, so match the reservation
 			 * made before LWT xmit.
 			 */
-			ret = xmit_check_headroom(skb);
+			ret = xmit_check_headroom(skb, hroom);
 			if (unlikely(ret))
 				return ret;
 
